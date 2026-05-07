@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Label Box Generator</title>
+    <link rel="stylesheet" href="styles.css">
+    <style id="print-page-style"></style>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>Label Box Generator</h1>
+          <p id="sheet-summary">Letter sheet, 3 x 8 labels</p>
+        </div>
+        <div class="topbar-actions">
+          <button class="button subtle" id="reset-button" type="button" title="Reset settings">Reset</button>
+          <button class="button primary" id="print-button" type="button" title="Print or save as PDF">Print</button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside class="controls" aria-label="Label controls">
+          <section class="control-section">
+            <div class="section-title">
+              <h2>Labels</h2>
+              <button class="button ghost" id="sample-button" type="button">Sample</button>
+            </div>
+            <label class="field">
+              <span>Text</span>
+              <textarea id="label-text" rows="9" spellcheck="false">Small Parts
+Fragile
+Handle With Care
+Batch A-104
+QA Hold
+Ready To Ship</textarea>
+            </label>
+            <div class="inline-check">
+              <input id="repeat-labels" type="checkbox" checked>
+              <label for="repeat-labels">Repeat to fill sheet</label>
+            </div>
+          </section>
+
+          <section class="control-section">
+            <h2>Sheet</h2>
+            <div class="two-col">
+              <label class="field">
+                <span>Paper</span>
+                <select id="paper-size">
+                  <option value="letter" selected>Letter</option>
+                  <option value="a4">A4</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Direction</span>
+                <select id="orientation">
+                  <option value="portrait" selected>Portrait</option>
+                  <option value="landscape">Landscape</option>
+                </select>
+              </label>
+            </div>
+            <div class="two-col">
+              <label class="field">
+                <span>Columns</span>
+                <input id="columns" type="number" min="1" max="12" value="3">
+              </label>
+              <label class="field">
+                <span>Rows</span>
+                <input id="rows" type="number" min="1" max="20" value="8">
+              </label>
+            </div>
+            <div class="two-col">
+              <label class="field">
+                <span>Side margin</span>
+                <input id="margin-x" type="number" min="0" max="2" step="0.05" value="0.5">
+              </label>
+              <label class="field">
+                <span>Top margin</span>
+                <input id="margin-y" type="number" min="0" max="2" step="0.05" value="0.5">
+              </label>
+            </div>
+            <div class="two-col">
+              <label class="field">
+                <span>Column gap</span>
+                <input id="gap-x" type="number" min="0" max="1" step="0.025" value="0.125">
+              </label>
+              <label class="field">
+                <span>Row gap</span>
+                <input id="gap-y" type="number" min="0" max="1" step="0.025" value="0.125">
+              </label>
+            </div>
+          </section>
+
+          <section class="control-section">
+            <h2>Box</h2>
+            <div class="two-col">
+              <label class="field">
+                <span>Font size</span>
+                <input id="font-size" type="number" min="6" max="48" step="1" value="14">
+              </label>
+              <label class="field">
+                <span>Padding</span>
+                <input id="padding" type="number" min="0" max="0.5" step="0.025" value="0.08">
+              </label>
+            </div>
+            <div class="two-col">
+              <label class="field">
+                <span>Border</span>
+                <input id="border-width" type="number" min="0" max="8" step="1" value="1">
+              </label>
+              <label class="field">
+                <span>Radius</span>
+                <input id="radius" type="number" min="0" max="0.5" step="0.025" value="0.04">
+              </label>
+            </div>
+            <div class="two-col">
+              <label class="field">
+                <span>Line</span>
+                <select id="border-style">
+                  <option value="solid" selected>Solid</option>
+                  <option value="dashed">Dashed</option>
+                  <option value="dotted">Dotted</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Align</span>
+                <select id="align">
+                  <option value="center" selected>Center</option>
+                  <option value="flex-start">Left</option>
+                  <option value="flex-end">Right</option>
+                </select>
+              </label>
+            </div>
+            <div class="two-col">
+              <label class="field color-field">
+                <span>Border color</span>
+                <input id="border-color" type="color" value="#1f2933">
+              </label>
+              <label class="field color-field">
+                <span>Text color</span>
+                <input id="text-color" type="color" value="#111827">
+              </label>
+            </div>
+            <div class="swatches" aria-label="Quick colors">
+              <button class="swatch" type="button" data-color="#1f2933" style="--swatch:#1f2933" title="Charcoal"></button>
+              <button class="swatch" type="button" data-color="#0f766e" style="--swatch:#0f766e" title="Teal"></button>
+              <button class="swatch" type="button" data-color="#b42318" style="--swatch:#b42318" title="Red"></button>
+              <button class="swatch" type="button" data-color="#175cd3" style="--swatch:#175cd3" title="Blue"></button>
+              <button class="swatch" type="button" data-color="#854a0e" style="--swatch:#854a0e" title="Amber"></button>
+            </div>
+          </section>
+        </aside>
+
+        <section class="preview-area" aria-label="Sheet preview">
+          <div class="preview-toolbar">
+            <span id="box-size">Label size: calculating</span>
+            <span id="label-count">24 boxes</span>
+          </div>
+          <div class="preview-scroll">
+            <div id="sheet" class="sheet" aria-label="Printable label sheet"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>
