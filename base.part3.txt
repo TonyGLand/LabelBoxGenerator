@@ -1,0 +1,180 @@
+    };
+  });
+}
+
+function MultiBoxPackingDiagram({ packingPlan }) {
+  const [boxIndex, setBoxIndex] = useState(0);
+
+  if (!packingPlan || !packingPlan.boxes || packingPlan.boxes.length === 0) {
+    return (
+      <Panel className="p-5">
+        <h2 className="mb-2 text-lg font-semibold">2D packing view</h2>
+        <div className="rounded-2xl bg-slate-100 p-4 text-sm text-slate-600">Add rolls to see the scaled top-view packing plan.</div>
+      </Panel>
+    );
+  }
+
+  const safeIndex = Math.min(boxIndex, packingPlan.boxes.length - 1);
+  const current = packingPlan.boxes[safeIndex];
+  const orientation = current.orientation;
+  const placed = current.topViewPlaced || [];
+  const viewW = 520;
+  const viewH = Math.max(220, Math.round((orientation.W / orientation.L) * viewW));
+  const scale = Math.min(viewW / orientation.L, viewH / orientation.W);
+  const svgW = orientation.L * scale;
+  const svgH = orientation.W * scale;
+  const rollsShown = placed.length;
+  const additionalRolls = Math.max(0, current.placedCount - rollsShown);
+  const layerViewW = 170;
+  const layerViewH = 220;
+  const layerScaleX = layerViewW / orientation.L;
+  const layerScaleY = layerViewH / orientation.H;
+
+  return (
+    <Panel className="p-5">
+      <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold">2D packing view</h2>
+          <p className="text-sm text-slate-600">Use the arrows to view each box setup. The final box may be partially filled.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setBoxIndex((i) => Math.max(0, i - 1))}
+            disabled={safeIndex === 0}
+            className="rounded-xl border border-slate-300 px-3 py-1 text-sm disabled:opacity-40"
+          >
+            Prev
+          </button>
+          <Badge good>Box {safeIndex + 1} of {packingPlan.boxes.length}</Badge>
+          <button
+            type="button"
+            onClick={() => setBoxIndex((i) => Math.min(packingPlan.boxes.length - 1, i + 1))}
+            disabled={safeIndex === packingPlan.boxes.length - 1}
+            className="rounded-xl border border-slate-300 px-3 py-1 text-sm disabled:opacity-40"
+          >
+            Next
+          </button>
+        </div>
+      </div>
+
+      <div className="mb-3 grid gap-2 text-sm text-slate-600 md:grid-cols-4">
+        <div className="rounded-xl bg-slate-100 p-3">Box: <span className="font-semibold">{current.boxName}</span></div>
+        <div className="rounded-xl bg-slate-100 p-3">Top view: {orientation.L} x {orientation.W}</div>
+        <div className="rounded-xl bg-slate-100 p-3">Height: {orientation.H}</div>
+        <div className="rounded-xl bg-slate-100 p-3">Rolls in box: {current.placedCount}</div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[1fr_220px]">
+        <div>
+          <div className="mb-2 text-sm font-medium text-slate-700">Overhead view</div>
+          <div className="overflow-x-auto rounded-2xl border bg-slate-50 p-4">
+            <svg width={svgW} height={svgH} viewBox={`0 0 ${svgW} ${svgH}`} className="max-w-full bg-white">
+              <rect x="0" y="0" width={svgW} height={svgH} fill="white" stroke="currentColor" strokeWidth="2" className="text-slate-800" />
+              {placed.map((roll, index) => {
+                const cx = roll.x * scale;
+                const cy = roll.y * scale;
+                const r = roll.r * scale;
+                return (
+                  <g key={roll.id}>
+                    <circle cx={cx} cy={cy} r={r} fill="rgb(226 232 240)" stroke="rgb(51 65 85)" strokeWidth="1.5" />
+                    <circle cx={cx} cy={cy} r={Math.max(2, (DEFAULT_CORE_DIAMETER / 2) * scale)} fill="white" stroke="rgb(100 116 139)" strokeWidth="1" />
+                    {r > 12 && (
+                      <text x={cx} y={cy + 4} textAnchor="middle" className="fill-slate-700 text-[10px] font-semibold">
+                        {index + 1}
+                      </text>
+                    )}
+                  </g>
+                );
+              })}
+            </svg>
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-2 text-sm font-medium text-slate-700">Layer view</div>
+          <div className="rounded-2xl border bg-slate-50 p-4">
+            <svg width={layerViewW} height={layerViewH} viewBox={`0 0 ${layerViewW} ${layerViewH}`} className="mx-auto bg-white">
+              <rect x="0" y="0" width={layerViewW} height={layerViewH} fill="white" stroke="currentColor" strokeWidth="2" className="text-slate-800" />
+              {current.layers.map((layer, index) => {
+                const layerHeight = Math.max(layer.layerHeight * layerScaleY, 6);
+                const y = layerViewH - current.layers.slice(0, index + 1).reduce((sum, l) => sum + l.layerHeight * layerScaleY, 0);
+                return (
+                  <g key={index}>
+                    <rect
+                      x="8"
+                      y={Math.max(0, y)}
+                      width={layerViewW - 16}
+                      height={layerHeight}
+                      fill="rgb(226 232 240)"
+                      stroke="rgb(51 65 85)"
+                      strokeWidth="1"
+                    />
+                    <text x={layerViewW / 2} y={Math.max(12, y + layerHeight / 2 + 4)} textAnchor="middle" className="fill-slate-700 text-[10px] font-semibold">
+                      Layer {index + 1}: {layer.placed.length} roll{layer.placed.length === 1 ? "" : "s"}
+                    </text>
+                  </g>
+                );
+              })}
+            </svg>
+            <div className="mt-3 text-center text-xs text-slate-600">Side view of stacked layers within the selected box height.</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-2 text-sm text-slate-600 md:grid-cols-3">
+        <div className="rounded-xl bg-slate-100 p-3">Layers used: {current.layers.length}</div>
+        <div className="rounded-xl bg-slate-100 p-3">Shown on top layer: {rollsShown}</div>
+        <div className="rounded-xl bg-slate-100 p-3">Stacked above: {additionalRolls}</div>
+      </div>
+
+      {packingPlan.unpacked.length > 0 && (
+        <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+          {packingPlan.unpacked.length} roll(s) could not be packed into the available box list.
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function LabelRollBoxCalculator() {
+  const [rollItems, setRollItems] = useState(SAMPLE_ROLLS);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [nextId, setNextId] = useState(4);
+  const [coreDiameter, setCoreDiameter] = useState(DEFAULT_CORE_DIAMETER);
+  const [caliperMil, setCaliperMil] = useState(DEFAULT_CALIPER_MIL);
+  const [clearance, setClearance] = useState(DEFAULT_CLEARANCE);
+  const [showTests, setShowTests] = useState(false);
+  const [formError, setFormError] = useState("");
+
+  const result = useMemo(() => {
+    const parsed = rollItems.map(normalizeRollInput).filter(Boolean);
+    const errors = parsed.filter((p) => p.error);
+    const valid = parsed
+      .filter((p) => !p.error)
+      .map((p) => calculateRoll(p, Number(coreDiameter), Number(caliperMil), Number(clearance)));
+    const packingPlan = valid.length ? buildMultiBoxPlan(valid) : { boxes: [], unpacked: [] };
+    const totalRolls = valid.reduce((sum, r) => sum + r.rolls, 0);
+    const totalCylinderVolume = valid.reduce((sum, r) => sum + r.totalCylinderVolume, 0);
+    const totalBoundingVolume = valid.reduce((sum, r) => sum + r.totalBoundingVolume, 0);
+
+    return {
+      parsed,
+      errors,
+      valid,
+      packingPlan,
+      totalRolls,
+      totalCylinderVolume,
+      totalBoundingVolume,
+    };
+  }, [rollItems, coreDiameter, caliperMil, clearance]);
+
+  const tests = useMemo(() => runTests(), []);
+  const testsPassed = tests.every((t) => t.passed);
+
+  function updateForm(field, value) {
+    setForm((current) => ({ ...current, [field]: value }));
+    setFormError("");
+  }
+
+  function addRollItem() {

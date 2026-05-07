@@ -1,0 +1,827 @@
+const { useMemo, useState } = React;
+
+const DEFAULT_CORE_DIAMETER = 3.025;
+const DEFAULT_CALIPER_MIL = 5.8;
+const DEFAULT_CLEARANCE = 0.25;
+
+const BOXES = [
+  [5, 5, 4],
+  [7, 7, 5],
+  [10, 5, 5],
+  [16, 6, 4],
+  [10, 10, 5],
+  [8, 8, 8],
+  [15, 10, 4],
+  [15, 10, 8],
+  [15, 12, 10],
+  [24, 16, 8],
+  [24, 16, 12],
+].map(([l, w, h]) => ({
+  name: `${l} x ${w} x ${h}`,
+  l,
+  w,
+  h,
+  volume: l * w * h,
+}));
+
+const SAMPLE_ROLLS = [
+  { id: 1, width: 4, height: 3.396, rolls: 2, labelsPerRoll: 500 },
+  { id: 2, width: 3, height: 2, rolls: 4, labelsPerRoll: 1000 },
+  { id: 3, width: 6, height: 4, rolls: 1, labelsPerRoll: 250 },
+];
+
+const EMPTY_FORM = {
+  width: "",
+  height: "",
+  rolls: "",
+  labelsPerRoll: "",
+};
+
+const TEST_CASES = [
+  {
+    name: "Short edge becomes repeat length",
+    item: { width: 4, height: 3.396, rolls: 2, labelsPerRoll: 500 },
+    expect: { repeat: 3.396, rollHeight: 4, rolls: 2, labelsPerRoll: 500 },
+  },
+  {
+    name: "Tall/narrow label still uses shorter edge as repeat",
+    item: { width: 2, height: 3, rolls: 4, labelsPerRoll: 1000 },
+    expect: { repeat: 2, rollHeight: 3, rolls: 4, labelsPerRoll: 1000 },
+  },
+  {
+    name: "Rejects missing labels per roll",
+    item: { width: 4, height: 6, rolls: 1, labelsPerRoll: "" },
+    expectError: true,
+  },
+  {
+    name: "Rejects zero rolls",
+    item: { width: 4, height: 6, rolls: 0, labelsPerRoll: 500 },
+    expectError: true,
+  },
+  {
+    name: "Large order produces a multi-box plan",
+    item: { width: 4, height: 3.396, rolls: 40, labelsPerRoll: 500 },
+    expectPackingPlan: true,
+  },
+];
+
+function formatNumber(n, digits = 2) {
+  if (!Number.isFinite(n)) return "--";
+  return n.toLocaleString(undefined, {
+    maximumFractionDigits: digits,
+    minimumFractionDigits: digits,
+  });
+}
+
+function Panel({ children, className = "" }) {
+  return <div className={`rounded-2xl border border-slate-200 bg-white shadow-sm ${className}`}>{children}</div>;
+}
+
+function Badge({ children, good = false, warn = false }) {
+  let className = "bg-slate-100 text-slate-700";
+  if (good) className = "bg-emerald-100 text-emerald-800";
+  if (warn) className = "bg-amber-100 text-amber-800";
+  return <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${className}`}>{children}</span>;
+}
+
+function NumberField({ label, value, onChange, step = "0.001" }) {
+  return (
+    <label className="space-y-1">
+      <span className="text-sm font-medium">{label}</span>
+      <input
+        type="number"
+        step={step}
+        min="0"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-2xl border border-slate-300 bg-white px-3 py-2 outline-none focus:border-slate-500"
+      />
+    </label>
+  );
+}
+
+function uniqueOrientations(box) {
+  const dims = [box.l, box.w, box.h];
+  const perms = [
+    [dims[0], dims[1], dims[2]],
+    [dims[0], dims[2], dims[1]],
+    [dims[1], dims[0], dims[2]],
+    [dims[1], dims[2], dims[0]],
+    [dims[2], dims[0], dims[1]],
+    [dims[2], dims[1], dims[0]],
+  ];
+
+  const seen = new Set();
+  return perms.filter((p) => {
+    const key = p.join("x");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function normalizeRollInput(item) {
+  const width = Number(item.width);
+  const height = Number(item.height);
+  const rolls = Number(item.rolls);
+  const labelsPerRoll = Number(String(item.labelsPerRoll).replace(/,/g, ""));
+
+  if (!Number.isFinite(width) || width <= 0) {
+    return { raw: item, error: "Width must be a positive number." };
+  }
+
+  if (!Number.isFinite(height) || height <= 0) {
+    return { raw: item, error: "Height must be a positive number." };
+  }
+
+  if (!Number.isFinite(rolls) || rolls <= 0) {
+    return { raw: item, error: "Number of rolls must be a positive number." };
+  }
+
+  if (!Number.isFinite(labelsPerRoll) || labelsPerRoll <= 0) {
+    return { raw: item, error: "Label quantity per roll must be a positive number." };
+  }
+
+  return {
+    id: item.id,
+    width,
+    height,
+    dimA: width,
+    dimB: height,
+    repeat: Math.min(width, height),
+    rollHeight: Math.max(width, height),
+    rolls,
+    labelsPerRoll,
+    description: `${formatNumber(width)} x ${formatNumber(height)} - ${rolls} roll${rolls === 1 ? "" : "s"}, ${labelsPerRoll.toLocaleString()} labels/roll`,
+  };
+}
+
+function calculateRoll(item, coreDiameter, caliperMil, clearance) {
+  const safeCoreDiameter = Math.max(Number(coreDiameter) || DEFAULT_CORE_DIAMETER, 0.001);
+  const safeCaliperMil = Math.max(Number(caliperMil) || DEFAULT_CALIPER_MIL, 0.001);
+  const safeClearance = Math.max(Number(clearance) || 0, 0);
+  const caliperInches = safeCaliperMil / 1000;
+  const woundLength = item.repeat * item.labelsPerRoll;
+  const outerDiameter = Math.sqrt(safeCoreDiameter ** 2 + (4 * woundLength * caliperInches) / Math.PI);
+  const effectiveDiameter = outerDiameter + safeClearance;
+  const effectiveHeight = item.rollHeight + safeClearance;
+  const cylinderVolume = Math.PI * (outerDiameter / 2) ** 2 * item.rollHeight;
+  const boundingVolume = effectiveDiameter * effectiveDiameter * effectiveHeight;
+
+  return {
+    ...item,
+    woundLength,
+    outerDiameter,
+    effectiveDiameter,
+    effectiveHeight,
+    cylinderVolume,
+    boundingVolume,
+    totalCylinderVolume: cylinderVolume * item.rolls,
+    totalBoundingVolume: boundingVolume * item.rolls,
+  };
+}
+
+function expandRollInstances(rollGroups) {
+  const instances = [];
+  rollGroups.forEach((group, groupIndex) => {
+    for (let i = 0; i < group.rolls; i += 1) {
+      instances.push({
+        id: `${group.id || groupIndex}-${i}`,
+        groupId: group.id || groupIndex,
+        groupIndex,
+        label: `${groupIndex + 1}.${i + 1}`,
+        diameter: group.effectiveDiameter,
+        actualDiameter: group.outerDiameter,
+        height: group.effectiveHeight,
+      });
+    }
+  });
+  return instances.sort((a, b) => b.diameter - a.diameter);
+}
+
+function packLayer(instances, orientation, remainingHeight) {
+  const placed = [];
+  const placedIds = new Set();
+  let cursorX = 0;
+  let cursorY = 0;
+  let rowHeight = 0;
+
+  for (const roll of instances) {
+    const d = roll.diameter;
+    if (roll.height > remainingHeight || d > orientation.L || d > orientation.W) continue;
+
+    if (cursorX + d > orientation.L) {
+      cursorX = 0;
+      cursorY += rowHeight;
+      rowHeight = 0;
+    }
+
+    if (cursorY + d <= orientation.W) {
+      placed.push({
+        ...roll,
+        x: cursorX + d / 2,
+        y: cursorY + d / 2,
+        r: d / 2,
+      });
+      placedIds.add(roll.id);
+      cursorX += d;
+      rowHeight = Math.max(rowHeight, d);
+    }
+  }
+
+  const remaining = instances.filter((roll) => !placedIds.has(roll.id));
+  const layerHeight = placed.length ? Math.max(...placed.map((roll) => roll.height)) : 0;
+  return { placed, remaining, layerHeight };
+}
+
+function packBox(instances, orientation) {
+  let remaining = [...instances];
+  let remainingHeight = orientation.H;
+  const layers = [];
+
+  while (remaining.length > 0 && remainingHeight > 0) {
+    const layer = packLayer(remaining, orientation, remainingHeight);
+    if (!layer.placed.length || layer.layerHeight <= 0 || layer.layerHeight > remainingHeight) break;
+    layers.push(layer);
+    remaining = layer.remaining;
+    remainingHeight -= layer.layerHeight;
+  }
+
+  const placedCount = layers.reduce((sum, layer) => sum + layer.placed.length, 0);
+  return {
+    orientation,
+    layers,
+    placedCount,
+    remaining,
+    topViewPlaced: layers[0]?.placed || [],
+  };
+}
+
+function chooseBestBoxForRemaining(instances) {
+  if (!instances.length) return null;
+  let best = null;
+
+  for (const box of BOXES) {
+    for (const [L, W, H] of uniqueOrientations(box)) {
+      const orientation = { L, W, H, box };
+      const packed = packBox(instances, orientation);
+      if (packed.placedCount === 0) continue;
+
+      const candidate = {
+        box,
+        boxName: box.name,
+        orientation,
+        layers: packed.layers,
+        topViewPlaced: packed.topViewPlaced,
+        placedCount: packed.placedCount,
+        remaining: packed.remaining,
+      };
+
+      if (!best) {
+        best = candidate;
+        continue;
+      }
+
+      const better =
+        candidate.placedCount > best.placedCount ||
+        (candidate.placedCount === best.placedCount && candidate.box.volume < best.box.volume);
+
+      if (better) best = candidate;
+    }
+  }
+
+  return best;
+}
+
+function buildMultiBoxPlan(rollGroups) {
+  let remaining = expandRollInstances(rollGroups);
+  const boxes = [];
+  let guard = 0;
+
+  while (remaining.length > 0 && guard < 200) {
+    guard += 1;
+    const best = chooseBestBoxForRemaining(remaining);
+
+    if (!best || best.placedCount === 0) {
+      return { boxes, unpacked: remaining };
+    }
+
+    boxes.push({
+      boxName: best.boxName,
+      box: best.box,
+      orientation: best.orientation,
+      layers: best.layers,
+      topViewPlaced: best.topViewPlaced,
+      placedCount: best.placedCount,
+    });
+
+    remaining = best.remaining;
+  }
+
+  return { boxes, unpacked: remaining };
+}
+
+function runTests() {
+  return TEST_CASES.map((test) => {
+    const parsed = normalizeRollInput(test.item);
+
+    if (test.expectError) {
+      return {
+        name: test.name,
+        passed: Boolean(parsed && parsed.error),
+        details: parsed?.error || "Expected an error but parsed successfully.",
+      };
+    }
+
+    if (test.expectPackingPlan) {
+      if (!parsed || parsed.error) {
+        return { name: test.name, passed: false, details: parsed?.error || "Could not parse test row." };
+      }
+      const calculated = calculateRoll(parsed, DEFAULT_CORE_DIAMETER, DEFAULT_CALIPER_MIL, DEFAULT_CLEARANCE);
+      const plan = buildMultiBoxPlan([calculated]);
+      return {
+        name: test.name,
+        passed: plan.boxes.length > 0 && plan.unpacked.length === 0,
+        details: plan.boxes.length > 0 ? `${plan.boxes.length} box(es), ${plan.unpacked.length} unpacked` : "No plan produced",
+      };
+    }
+
+    const passed =
+      parsed &&
+      !parsed.error &&
+      parsed.repeat === test.expect.repeat &&
+      parsed.rollHeight === test.expect.rollHeight &&
+      parsed.rolls === test.expect.rolls &&
+      parsed.labelsPerRoll === test.expect.labelsPerRoll;
+
+    return {
+      name: test.name,
+      passed: Boolean(passed),
+      details: passed ? "OK" : `Expected ${JSON.stringify(test.expect)}, got ${JSON.stringify(parsed)}`,
+    };
+  });
+}
+
+function MultiBoxPackingDiagram({ packingPlan }) {
+  const [boxIndex, setBoxIndex] = useState(0);
+
+  if (!packingPlan || !packingPlan.boxes || packingPlan.boxes.length === 0) {
+    return (
+      <Panel className="p-5">
+        <h2 className="mb-2 text-lg font-semibold">2D packing view</h2>
+        <div className="rounded-2xl bg-slate-100 p-4 text-sm text-slate-600">Add rolls to see the scaled top-view packing plan.</div>
+      </Panel>
+    );
+  }
+
+  const safeIndex = Math.min(boxIndex, packingPlan.boxes.length - 1);
+  const current = packingPlan.boxes[safeIndex];
+  const orientation = current.orientation;
+  const placed = current.topViewPlaced || [];
+  const viewW = 520;
+  const viewH = Math.max(220, Math.round((orientation.W / orientation.L) * viewW));
+  const scale = Math.min(viewW / orientation.L, viewH / orientation.W);
+  const svgW = orientation.L * scale;
+  const svgH = orientation.W * scale;
+  const rollsShown = placed.length;
+  const additionalRolls = Math.max(0, current.placedCount - rollsShown);
+  const layerViewW = 170;
+  const layerViewH = 220;
+  const layerScaleX = layerViewW / orientation.L;
+  const layerScaleY = layerViewH / orientation.H;
+
+  return (
+    <Panel className="p-5">
+      <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold">2D packing view</h2>
+          <p className="text-sm text-slate-600">Use the arrows to view each box setup. The final box may be partially filled.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setBoxIndex((i) => Math.max(0, i - 1))}
+            disabled={safeIndex === 0}
+            className="rounded-xl border border-slate-300 px-3 py-1 text-sm disabled:opacity-40"
+          >
+            Prev
+          </button>
+          <Badge good>Box {safeIndex + 1} of {packingPlan.boxes.length}</Badge>
+          <button
+            type="button"
+            onClick={() => setBoxIndex((i) => Math.min(packingPlan.boxes.length - 1, i + 1))}
+            disabled={safeIndex === packingPlan.boxes.length - 1}
+            className="rounded-xl border border-slate-300 px-3 py-1 text-sm disabled:opacity-40"
+          >
+            Next
+          </button>
+        </div>
+      </div>
+
+      <div className="mb-3 grid gap-2 text-sm text-slate-600 md:grid-cols-4">
+        <div className="rounded-xl bg-slate-100 p-3">Box: <span className="font-semibold">{current.boxName}</span></div>
+        <div className="rounded-xl bg-slate-100 p-3">Top view: {orientation.L} x {orientation.W}</div>
+        <div className="rounded-xl bg-slate-100 p-3">Height: {orientation.H}</div>
+        <div className="rounded-xl bg-slate-100 p-3">Rolls in box: {current.placedCount}</div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[1fr_220px]">
+        <div>
+          <div className="mb-2 text-sm font-medium text-slate-700">Overhead view</div>
+          <div className="overflow-x-auto rounded-2xl border bg-slate-50 p-4">
+            <svg width={svgW} height={svgH} viewBox={`0 0 ${svgW} ${svgH}`} className="max-w-full bg-white">
+              <rect x="0" y="0" width={svgW} height={svgH} fill="white" stroke="currentColor" strokeWidth="2" className="text-slate-800" />
+              {placed.map((roll, index) => {
+                const cx = roll.x * scale;
+                const cy = roll.y * scale;
+                const r = roll.r * scale;
+                return (
+                  <g key={roll.id}>
+                    <circle cx={cx} cy={cy} r={r} fill="rgb(226 232 240)" stroke="rgb(51 65 85)" strokeWidth="1.5" />
+                    <circle cx={cx} cy={cy} r={Math.max(2, (DEFAULT_CORE_DIAMETER / 2) * scale)} fill="white" stroke="rgb(100 116 139)" strokeWidth="1" />
+                    {r > 12 && (
+                      <text x={cx} y={cy + 4} textAnchor="middle" className="fill-slate-700 text-[10px] font-semibold">
+                        {index + 1}
+                      </text>
+                    )}
+                  </g>
+                );
+              })}
+            </svg>
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-2 text-sm font-medium text-slate-700">Layer view</div>
+          <div className="rounded-2xl border bg-slate-50 p-4">
+            <svg width={layerViewW} height={layerViewH} viewBox={`0 0 ${layerViewW} ${layerViewH}`} className="mx-auto bg-white">
+              <rect x="0" y="0" width={layerViewW} height={layerViewH} fill="white" stroke="currentColor" strokeWidth="2" className="text-slate-800" />
+              {current.layers.map((layer, index) => {
+                const layerHeight = Math.max(layer.layerHeight * layerScaleY, 6);
+                const y = layerViewH - current.layers.slice(0, index + 1).reduce((sum, l) => sum + l.layerHeight * layerScaleY, 0);
+                return (
+                  <g key={index}>
+                    <rect
+                      x="8"
+                      y={Math.max(0, y)}
+                      width={layerViewW - 16}
+                      height={layerHeight}
+                      fill="rgb(226 232 240)"
+                      stroke="rgb(51 65 85)"
+                      strokeWidth="1"
+                    />
+                    <text x={layerViewW / 2} y={Math.max(12, y + layerHeight / 2 + 4)} textAnchor="middle" className="fill-slate-700 text-[10px] font-semibold">
+                      Layer {index + 1}: {layer.placed.length} roll{layer.placed.length === 1 ? "" : "s"}
+                    </text>
+                  </g>
+                );
+              })}
+            </svg>
+            <div className="mt-3 text-center text-xs text-slate-600">Side view of stacked layers within the selected box height.</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-2 text-sm text-slate-600 md:grid-cols-3">
+        <div className="rounded-xl bg-slate-100 p-3">Layers used: {current.layers.length}</div>
+        <div className="rounded-xl bg-slate-100 p-3">Shown on top layer: {rollsShown}</div>
+        <div className="rounded-xl bg-slate-100 p-3">Stacked above: {additionalRolls}</div>
+      </div>
+
+      {packingPlan.unpacked.length > 0 && (
+        <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+          {packingPlan.unpacked.length} roll(s) could not be packed into the available box list.
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function LabelRollBoxCalculator() {
+  const [rollItems, setRollItems] = useState(SAMPLE_ROLLS);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [nextId, setNextId] = useState(4);
+  const [coreDiameter, setCoreDiameter] = useState(DEFAULT_CORE_DIAMETER);
+  const [caliperMil, setCaliperMil] = useState(DEFAULT_CALIPER_MIL);
+  const [clearance, setClearance] = useState(DEFAULT_CLEARANCE);
+  const [showTests, setShowTests] = useState(false);
+  const [formError, setFormError] = useState("");
+
+  const result = useMemo(() => {
+    const parsed = rollItems.map(normalizeRollInput).filter(Boolean);
+    const errors = parsed.filter((p) => p.error);
+    const valid = parsed
+      .filter((p) => !p.error)
+      .map((p) => calculateRoll(p, Number(coreDiameter), Number(caliperMil), Number(clearance)));
+    const packingPlan = valid.length ? buildMultiBoxPlan(valid) : { boxes: [], unpacked: [] };
+    const totalRolls = valid.reduce((sum, r) => sum + r.rolls, 0);
+    const totalCylinderVolume = valid.reduce((sum, r) => sum + r.totalCylinderVolume, 0);
+    const totalBoundingVolume = valid.reduce((sum, r) => sum + r.totalBoundingVolume, 0);
+
+    return {
+      parsed,
+      errors,
+      valid,
+      packingPlan,
+      totalRolls,
+      totalCylinderVolume,
+      totalBoundingVolume,
+    };
+  }, [rollItems, coreDiameter, caliperMil, clearance]);
+
+  const tests = useMemo(() => runTests(), []);
+  const testsPassed = tests.every((t) => t.passed);
+
+  function updateForm(field, value) {
+    setForm((current) => ({ ...current, [field]: value }));
+    setFormError("");
+  }
+
+  function addRollItem() {
+    const item = { id: nextId, ...form };
+    const normalized = normalizeRollInput(item);
+    if (normalized.error) {
+      setFormError(normalized.error);
+      return;
+    }
+
+    setRollItems((current) => [...current, item]);
+    setNextId((id) => id + 1);
+    setForm(EMPTY_FORM);
+    setFormError("");
+  }
+
+  function removeRollItem(id) {
+    setRollItems((current) => current.filter((item) => item.id !== id));
+  }
+
+  function clearRollItems() {
+    setRollItems([]);
+    setForm(EMPTY_FORM);
+    setFormError("");
+  }
+
+  function resetSample() {
+    setRollItems(SAMPLE_ROLLS);
+    setForm(EMPTY_FORM);
+    setNextId(4);
+    setFormError("");
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50 p-4 text-slate-900 md:p-8">
+      <div className="mx-auto max-w-7xl space-y-6">
+        <header className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div>
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-sm shadow-sm">
+              <span>Label Roll Box Calculator v1</span>
+            </div>
+            <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Find the practical box plan for label rolls</h1>
+            <p className="mt-2 max-w-3xl text-slate-600">
+              Add one or more roll groups, calculate roll diameters from caliper and core size, then build a multi-box packing plan.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setShowTests((v) => !v)}
+              className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-slate-50"
+            >
+              {showTests ? "Hide tests" : "Show tests"}
+            </button>
+            <button
+              type="button"
+              onClick={resetSample}
+              className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-slate-50"
+            >
+              Reset sample
+            </button>
+          </div>
+        </header>
+
+        {showTests && (
+          <Panel className="p-5">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold">Built-in test cases</h2>
+              <Badge good={testsPassed}>{testsPassed ? "All tests passed" : "Some tests failed"}</Badge>
+            </div>
+            <div className="space-y-2">
+              {tests.map((test) => (
+                <div key={test.name} className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-medium">{test.name}</span>
+                    <Badge good={test.passed}>{test.passed ? "Pass" : "Fail"}</Badge>
+                  </div>
+                  <div className="mt-1 font-mono text-xs text-slate-600">{test.details}</div>
+                </div>
+              ))}
+            </div>
+          </Panel>
+        )}
+
+        <div className="grid gap-6 lg:grid-cols-[1fr_420px]">
+          <Panel className="space-y-4 p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-lg font-semibold">Add roll group</div>
+              <button
+                type="button"
+                onClick={clearRollItems}
+                className="rounded-2xl border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-slate-50"
+              >
+                Clear rolls
+              </button>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-4">
+              <NumberField label="Width, in" value={form.width} onChange={(v) => updateForm("width", v)} />
+              <NumberField label="Height, in" value={form.height} onChange={(v) => updateForm("height", v)} />
+              <NumberField label="# of rolls" value={form.rolls} onChange={(v) => updateForm("rolls", v)} step="1" />
+              <NumberField label="Labels / roll" value={form.labelsPerRoll} onChange={(v) => updateForm("labelsPerRoll", v)} step="1" />
+            </div>
+
+            {formError && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{formError}</div>}
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={addRollItem}
+                className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
+              >
+                Add to roll calculations
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setForm(EMPTY_FORM);
+                  setFormError("");
+                }}
+                className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-slate-50"
+              >
+                Clear entry fields
+              </button>
+            </div>
+
+            <div className="rounded-2xl bg-slate-100 p-3 text-sm text-slate-700">
+              <div className="font-medium">Input rule</div>
+              <div className="mt-1">Enter the label width and height. The calculator automatically treats the shorter edge as the repeat length coming off the roll, and the longer edge as roll height.</div>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-3">
+              <NumberField label="Core diameter, in" value={coreDiameter} onChange={setCoreDiameter} step="0.001" />
+              <NumberField label="Total caliper, mil" value={caliperMil} onChange={setCaliperMil} step="0.1" />
+              <NumberField label="Clearance, in" value={clearance} onChange={setClearance} step="0.05" />
+            </div>
+          </Panel>
+
+          <Panel className="space-y-4 p-5">
+            <div className="flex items-center gap-2 text-lg font-semibold">
+              <span>Shipment plan</span>
+            </div>
+
+            {result.errors.length > 0 && (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                <div className="font-semibold">Fix these roll rows</div>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  {result.errors.map((e, i) => (
+                    <li key={`${i}-${e.error}`}>{e.error}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {result.valid.length === 0 ? (
+              <div className="rounded-2xl bg-slate-100 p-4 text-slate-600">Add at least one valid roll group.</div>
+            ) : result.packingPlan.boxes.length > 0 ? (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                <div className="text-emerald-800">Recommended shipment plan</div>
+                <div className="mt-2 text-4xl font-bold tracking-tight text-emerald-950">
+                  {result.packingPlan.boxes.length} box{result.packingPlan.boxes.length === 1 ? "" : "es"}
+                </div>
+                <div className="mt-2 text-sm text-emerald-900">
+                  First box: {result.packingPlan.boxes[0].boxName}
+                </div>
+                {result.packingPlan.unpacked.length > 0 && (
+                  <div className="mt-2 text-sm text-amber-800">
+                    {result.packingPlan.unpacked.length} roll(s) could not be packed with the current box list.
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-900">
+                <div className="font-semibold">No workable packing plan found.</div>
+                <div className="mt-2 text-sm">Try adding a larger box size or splitting the order manually.</div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-3 gap-3 text-center">
+              <div className="rounded-2xl bg-slate-50 p-3 shadow-sm">
+                <div className="text-xs text-slate-500">Rolls</div>
+                <div className="text-xl font-semibold">{result.totalRolls}</div>
+              </div>
+              <div className="rounded-2xl bg-slate-50 p-3 shadow-sm">
+                <div className="text-xs text-slate-500">Roll volume</div>
+                <div className="text-xl font-semibold">{formatNumber(result.totalCylinderVolume, 0)}</div>
+              </div>
+              <div className="rounded-2xl bg-slate-50 p-3 shadow-sm">
+                <div className="text-xs text-slate-500">Packed est.</div>
+                <div className="text-xl font-semibold">{formatNumber(result.totalBoundingVolume, 0)}</div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-slate-100 p-3 text-xs text-slate-600">
+              This is a practical multi-box estimate. It assumes upright rolls, stacking allowed, short edge unwinds first, and tight packing with clearance added to diameter and height.
+            </div>
+          </Panel>
+        </div>
+
+        <MultiBoxPackingDiagram packingPlan={result.packingPlan} />
+
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Panel className="p-5">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold">Roll calculations</h2>
+              {result.valid.length > 0 && (
+                <button
+                  type="button"
+                  onClick={clearRollItems}
+                  className="rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100"
+                >
+                  Remove all rolls
+                </button>
+              )}
+            </div>
+            {result.valid.length === 0 ? (
+              <div className="rounded-2xl bg-slate-100 p-4 text-sm text-slate-600">No roll rows yet. Add one above to begin.</div>
+            ) : (
+              <div className="overflow-x-auto rounded-2xl border bg-white">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="p-3">Width</th>
+                      <th className="p-3">Height</th>
+                      <th className="p-3">Rolls</th>
+                      <th className="p-3">Labels / roll</th>
+                      <th className="p-3">Repeat</th>
+                      <th className="p-3">Roll height</th>
+                      <th className="p-3">Diameter</th>
+                      <th className="p-3">Eff. size</th>
+                      <th className="p-3">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {result.valid.map((r) => (
+                      <tr key={r.id} className="border-t">
+                        <td className="p-3">{formatNumber(r.width)}&quot;</td>
+                        <td className="p-3">{formatNumber(r.height)}&quot;</td>
+                        <td className="p-3">{r.rolls}</td>
+                        <td className="p-3">{r.labelsPerRoll.toLocaleString()}</td>
+                        <td className="p-3">{formatNumber(r.repeat)}&quot;</td>
+                        <td className="p-3">{formatNumber(r.rollHeight)}&quot;</td>
+                        <td className="p-3 font-semibold">{formatNumber(r.outerDiameter)}&quot;</td>
+                        <td className="p-3">{formatNumber(r.effectiveDiameter)} x {formatNumber(r.effectiveHeight)}</td>
+                        <td className="p-3">
+                          <button
+                            type="button"
+                            onClick={() => removeRollItem(r.id)}
+                            className="rounded-xl border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50"
+                          >
+                            Remove
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Panel>
+
+          <Panel className="p-5">
+            <h2 className="mb-4 text-lg font-semibold">Box summary</h2>
+            {result.packingPlan.boxes.length === 0 ? (
+              <div className="rounded-2xl bg-slate-100 p-4 text-sm text-slate-600">Box summary will appear after you add at least one roll group.</div>
+            ) : (
+              <div className="space-y-2">
+                {result.packingPlan.boxes.map((boxSetup, i) => (
+                  <div key={i} className="rounded-2xl border border-slate-200 bg-white p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="font-semibold">Box {i + 1}: {boxSetup.boxName}</div>
+                      <Badge good>{boxSetup.placedCount} roll(s)</Badge>
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      Orientation: {boxSetup.orientation.L} x {boxSetup.orientation.W} x {boxSetup.orientation.H}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">Layers used: {boxSetup.layers.length}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Panel>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const rootElement = document.getElementById("root");
+ReactDOM.createRoot(rootElement).render(<LabelRollBoxCalculator />);

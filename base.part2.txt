@@ -1,0 +1,180 @@
+  };
+}
+
+function expandRollInstances(rollGroups) {
+  const instances = [];
+  rollGroups.forEach((group, groupIndex) => {
+    for (let i = 0; i < group.rolls; i += 1) {
+      instances.push({
+        id: `${group.id || groupIndex}-${i}`,
+        groupId: group.id || groupIndex,
+        groupIndex,
+        label: `${groupIndex + 1}.${i + 1}`,
+        diameter: group.effectiveDiameter,
+        actualDiameter: group.outerDiameter,
+        height: group.effectiveHeight,
+      });
+    }
+  });
+  return instances.sort((a, b) => b.diameter - a.diameter);
+}
+
+function packLayer(instances, orientation, remainingHeight) {
+  const placed = [];
+  const placedIds = new Set();
+  let cursorX = 0;
+  let cursorY = 0;
+  let rowHeight = 0;
+
+  for (const roll of instances) {
+    const d = roll.diameter;
+    if (roll.height > remainingHeight || d > orientation.L || d > orientation.W) continue;
+
+    if (cursorX + d > orientation.L) {
+      cursorX = 0;
+      cursorY += rowHeight;
+      rowHeight = 0;
+    }
+
+    if (cursorY + d <= orientation.W) {
+      placed.push({
+        ...roll,
+        x: cursorX + d / 2,
+        y: cursorY + d / 2,
+        r: d / 2,
+      });
+      placedIds.add(roll.id);
+      cursorX += d;
+      rowHeight = Math.max(rowHeight, d);
+    }
+  }
+
+  const remaining = instances.filter((roll) => !placedIds.has(roll.id));
+  const layerHeight = placed.length ? Math.max(...placed.map((roll) => roll.height)) : 0;
+  return { placed, remaining, layerHeight };
+}
+
+function packBox(instances, orientation) {
+  let remaining = [...instances];
+  let remainingHeight = orientation.H;
+  const layers = [];
+
+  while (remaining.length > 0 && remainingHeight > 0) {
+    const layer = packLayer(remaining, orientation, remainingHeight);
+    if (!layer.placed.length || layer.layerHeight <= 0 || layer.layerHeight > remainingHeight) break;
+    layers.push(layer);
+    remaining = layer.remaining;
+    remainingHeight -= layer.layerHeight;
+  }
+
+  const placedCount = layers.reduce((sum, layer) => sum + layer.placed.length, 0);
+  return {
+    orientation,
+    layers,
+    placedCount,
+    remaining,
+    topViewPlaced: layers[0]?.placed || [],
+  };
+}
+
+function chooseBestBoxForRemaining(instances) {
+  if (!instances.length) return null;
+  let best = null;
+
+  for (const box of BOXES) {
+    for (const [L, W, H] of uniqueOrientations(box)) {
+      const orientation = { L, W, H, box };
+      const packed = packBox(instances, orientation);
+      if (packed.placedCount === 0) continue;
+
+      const candidate = {
+        box,
+        boxName: box.name,
+        orientation,
+        layers: packed.layers,
+        topViewPlaced: packed.topViewPlaced,
+        placedCount: packed.placedCount,
+        remaining: packed.remaining,
+      };
+
+      if (!best) {
+        best = candidate;
+        continue;
+      }
+
+      const better =
+        candidate.placedCount > best.placedCount ||
+        (candidate.placedCount === best.placedCount && candidate.box.volume < best.box.volume);
+
+      if (better) best = candidate;
+    }
+  }
+
+  return best;
+}
+
+function buildMultiBoxPlan(rollGroups) {
+  let remaining = expandRollInstances(rollGroups);
+  const boxes = [];
+  let guard = 0;
+
+  while (remaining.length > 0 && guard < 200) {
+    guard += 1;
+    const best = chooseBestBoxForRemaining(remaining);
+
+    if (!best || best.placedCount === 0) {
+      return { boxes, unpacked: remaining };
+    }
+
+    boxes.push({
+      boxName: best.boxName,
+      box: best.box,
+      orientation: best.orientation,
+      layers: best.layers,
+      topViewPlaced: best.topViewPlaced,
+      placedCount: best.placedCount,
+    });
+
+    remaining = best.remaining;
+  }
+
+  return { boxes, unpacked: remaining };
+}
+
+function runTests() {
+  return TEST_CASES.map((test) => {
+    const parsed = normalizeRollInput(test.item);
+
+    if (test.expectError) {
+      return {
+        name: test.name,
+        passed: Boolean(parsed && parsed.error),
+        details: parsed?.error || "Expected an error but parsed successfully.",
+      };
+    }
+
+    if (test.expectPackingPlan) {
+      if (!parsed || parsed.error) {
+        return { name: test.name, passed: false, details: parsed?.error || "Could not parse test row." };
+      }
+      const calculated = calculateRoll(parsed, DEFAULT_CORE_DIAMETER, DEFAULT_CALIPER_MIL, DEFAULT_CLEARANCE);
+      const plan = buildMultiBoxPlan([calculated]);
+      return {
+        name: test.name,
+        passed: plan.boxes.length > 0 && plan.unpacked.length === 0,
+        details: plan.boxes.length > 0 ? `${plan.boxes.length} box(es), ${plan.unpacked.length} unpacked` : "No plan produced",
+      };
+    }
+
+    const passed =
+      parsed &&
+      !parsed.error &&
+      parsed.repeat === test.expect.repeat &&
+      parsed.rollHeight === test.expect.rollHeight &&
+      parsed.rolls === test.expect.rolls &&
+      parsed.labelsPerRoll === test.expect.labelsPerRoll;
+
+    return {
+      name: test.name,
+      passed: Boolean(passed),
+      details: passed ? "OK" : `Expected ${JSON.stringify(test.expect)}, got ${JSON.stringify(parsed)}`,

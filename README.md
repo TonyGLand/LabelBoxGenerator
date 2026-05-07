@@ -1,10 +1,22 @@
-# Label Box Generator
+# Label Roll Box Calculator
 
-A dependency-free local web app for building printable label sheets.
+A static React calculator for estimating practical box plans for label rolls.
 
-## Run locally
+The app source started as `base.js`. For GitHub Pages deployment, `base.js` is split into `base.part*.txt` files and stitched together by `index.html` in the browser.
 
-Open `index.html` directly in a browser, or serve the folder:
+## GitHub Pages
+
+This repository is designed to deploy directly from the `main` branch root.
+
+Live site:
+
+```text
+https://tonygland.github.io/LabelBoxGenerator/
+```
+
+## Local Run
+
+Serve the folder:
 
 ```powershell
 python -m http.server 5173
@@ -15,5 +27,3 @@ Then visit:
 ```text
 http://localhost:5173
 ```
-
-Use the Print button to print or save the generated sheet as a PDF.
