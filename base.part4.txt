@@ -1,3 +1,82 @@
+          <Badge good>Box {safeIndex + 1} of {packingPlan.boxes.length}</Badge>
+          <button
+            type="button"
+            onClick={() => setBoxIndex((i) => Math.min(packingPlan.boxes.length - 1, i + 1))}
+            disabled={safeIndex === packingPlan.boxes.length - 1}
+            className="rounded-xl border border-slate-300 px-3 py-1 text-sm disabled:opacity-40"
+          >
+            Next
+          </button>
+        </div>
+      </div>
+
+      <div className="mb-2 grid gap-2 text-xs text-slate-600 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-xl bg-slate-100 px-3 py-2">Box: <span className="font-semibold">{current.boxName}</span></div>
+        <div className="rounded-xl bg-slate-100 px-3 py-2">Top view: {orientation.L} x {orientation.W}</div>
+        <div className="rounded-xl bg-slate-100 px-3 py-2">Height: {orientation.H}</div>
+        <div className="rounded-xl bg-slate-100 px-3 py-2">Rolls in box: {current.placedCount}</div>
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_210px]">
+        <div>
+          <div className="mb-1 text-sm font-medium text-slate-700">Layer 1 overhead view</div>
+          <div className="w-full overflow-hidden rounded-2xl border bg-slate-50 p-2" style={{ height: "clamp(260px, calc(100vh - 260px), 560px)" }}>
+            <svg width="100%" height="100%" viewBox={`0 0 ${svgW} ${svgH}`} preserveAspectRatio="xMidYMid meet" className="bg-white">
+              <rect x="0" y="0" width={svgW} height={svgH} fill="white" stroke="currentColor" strokeWidth="2" className="text-slate-800" />
+              {placed.map((roll) => {
+                const cx = roll.x * scale;
+                const cy = roll.y * scale;
+                const clearanceR = roll.r * scale;
+                const actualR = (roll.actualDiameter / 2) * scale;
+                const labelFontSize = Math.max(7, Math.min(11, actualR * 0.45));
+                return (
+                  <g key={roll.id}>
+                    <circle
+                      cx={cx}
+                      cy={cy}
+                      r={clearanceR}
+                      fill="rgb(248 250 252)"
+                      stroke="rgb(203 213 225)"
+                      strokeWidth="1"
+                      strokeDasharray="4 3"
+                    />
+                    <circle cx={cx} cy={cy} r={actualR} fill="rgb(226 232 240)" stroke="rgb(51 65 85)" strokeWidth="1.5" />
+                    <circle cx={cx} cy={cy} r={Math.max(2, (DEFAULT_CORE_DIAMETER / 2) * scale)} fill="white" stroke="rgb(100 116 139)" strokeWidth="1" />
+                    <text
+                      x={cx}
+                      y={cy + 3}
+                      textAnchor="middle"
+                      fontSize={labelFontSize}
+                      className="fill-slate-700 font-semibold"
+                    >
+                      {roll.label}
+                    </text>
+                  </g>
+                );
+              })}
+            </svg>
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-1 text-sm font-medium text-slate-700">Layer view</div>
+          <div className="rounded-2xl border bg-slate-50 p-3">
+            <svg width={layerViewW} height={layerViewH} viewBox={`0 0 ${layerViewW} ${layerViewH}`} className="mx-auto bg-white">
+              <rect x="0" y="0" width={layerViewW} height={layerViewH} fill="white" stroke="currentColor" strokeWidth="2" className="text-slate-800" />
+              {current.layers.map((layer, index) => {
+                const layerHeight = Math.max(layer.layerHeight * layerScaleY, 6);
+                const y = layerViewH - current.layers.slice(0, index + 1).reduce((sum, l) => sum + l.layerHeight * layerScaleY, 0);
+                return (
+                  <g key={index}>
+                    <rect
+                      x="8"
+                      y={Math.max(0, y)}
+                      width={layerViewW - 16}
+                      height={layerHeight}
+                      fill="rgb(226 232 240)"
+                      stroke="rgb(51 65 85)"
+                      strokeWidth="1"
+                    />
                     <text x={layerViewW / 2} y={Math.max(12, y + layerHeight / 2 + 4)} textAnchor="middle" className="fill-slate-700 text-[10px] font-semibold">
                       Layer {index + 1}: {layer.placed.length} roll{layer.placed.length === 1 ? "" : "s"}
                     </text>
@@ -82,54 +161,3 @@ function BoxSummary({ packingPlan }) {
       </div>
     );
   }
-
-  return (
-    <div className="max-h-[340px] space-y-2 overflow-y-auto pr-1">
-      {packingPlan.boxes.map((boxSetup, i) => (
-        <div key={i} className="rounded-2xl border border-slate-200 bg-white p-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="font-semibold">Box {i + 1}: {boxSetup.boxName}</div>
-            <Badge good>{boxSetup.placedCount} roll(s)</Badge>
-          </div>
-          <div className="mt-1 text-xs text-slate-500">
-            Orientation: {boxSetup.orientation.L} x {boxSetup.orientation.W} x {boxSetup.orientation.H}
-          </div>
-          <div className="mt-1 text-xs text-slate-500">Layers used: {boxSetup.layers.length}</div>
-          <div className="mt-2 space-y-1">
-            {boxSetup.layers.map((layer, layerIndex) => (
-              <div key={layerIndex} className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                <span className="font-semibold text-slate-700">Layer {layerIndex + 1}:</span> {summarizeLayerRollLabels(layer.placed)}
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function LabelRollBoxCalculator() {
-  const [rollItems, setRollItems] = useState(SAMPLE_ROLLS);
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [nextId, setNextId] = useState(4);
-  const [coreDiameter, setCoreDiameter] = useState(DEFAULT_CORE_DIAMETER);
-  const [caliperMil, setCaliperMil] = useState(DEFAULT_CALIPER_MIL);
-  const [clearance, setClearance] = useState(DEFAULT_CLEARANCE);
-  const [repeatEdge, setRepeatEdge] = useState(DEFAULT_REPEAT_EDGE);
-  const [selectedBoxIds, setSelectedBoxIds] = useState(DEFAULT_SELECTED_BOX_IDS);
-  const [activeTab, setActiveTab] = useState("rolls");
-  const [formError, setFormError] = useState("");
-
-  const result = useMemo(() => {
-    const availableBoxes = BOXES.filter((box) => selectedBoxIds.includes(box.id));
-    const parsed = rollItems.map((item) => normalizeRollInput(item, repeatEdge)).filter(Boolean);
-    const errors = parsed.filter((p) => p.error);
-    const valid = parsed
-      .filter((p) => !p.error)
-      .map((p) => calculateRoll(p, Number(coreDiameter), Number(caliperMil), Number(clearance)));
-    const packingPlan = valid.length ? buildMultiBoxPlan(valid, availableBoxes) : { boxes: [], unpacked: [] };
-    const boxMix = summarizeBoxMix(packingPlan.boxes);
-    const totalRolls = valid.reduce((sum, r) => sum + r.rolls, 0);
-    const totalCylinderVolume = valid.reduce((sum, r) => sum + r.totalCylinderVolume, 0);
-    const totalBoundingVolume = valid.reduce((sum, r) => sum + r.totalBoundingVolume, 0);
-

@@ -1,3 +1,98 @@
+
+      if (!best) {
+        best = candidate;
+        continue;
+      }
+
+      const better =
+        (candidate.fillsAllRemaining && !best.fillsAllRemaining) ||
+        candidate.placedCount > best.placedCount ||
+        (candidate.placedCount === best.placedCount && candidate.box.volume < best.box.volume);
+
+      if (better) best = candidate;
+    }
+  }
+
+  return best;
+}
+
+function buildMultiBoxPlan(rollGroups, availableBoxes = BOXES) {
+  let remaining = expandRollInstances(rollGroups);
+  const boxes = [];
+  let guard = 0;
+
+  while (remaining.length > 0 && guard < 200) {
+    guard += 1;
+    const best = chooseBestBoxForRemaining(remaining, availableBoxes);
+
+    if (!best || best.placedCount === 0) {
+      return { boxes, unpacked: remaining };
+    }
+
+    boxes.push({
+      boxName: best.boxName,
+      box: best.box,
+      orientation: best.orientation,
+      layers: best.layers,
+      topViewPlaced: best.topViewPlaced,
+      placedCount: best.placedCount,
+    });
+
+    remaining = best.remaining;
+  }
+
+  return { boxes, unpacked: remaining };
+}
+
+function summarizeBoxMix(boxes) {
+  const counts = new Map();
+  boxes.forEach((boxSetup) => {
+    counts.set(boxSetup.boxName, (counts.get(boxSetup.boxName) || 0) + 1);
+  });
+
+  return Array.from(counts.entries()).map(([boxName, count]) => ({ boxName, count }));
+}
+
+function getRollLabel(groupIndex) {
+  return `${groupIndex + 1}`;
+}
+
+function getRollLabelRange(groupIndex) {
+  return getRollLabel(groupIndex);
+}
+
+function summarizeLayerRollLabels(rolls) {
+  const counts = new Map();
+  rolls.forEach((roll) => {
+    counts.set(roll.label, (counts.get(roll.label) || 0) + 1);
+  });
+
+  return Array.from(counts.entries())
+    .map(([label, count]) => (count === 1 ? label : `${label} (${count})`))
+    .join(", ");
+}
+
+function runTests() {
+  return TEST_CASES.map((test) => {
+    const parsed = normalizeRollInput(test.item, test.repeatEdge);
+
+    if (test.expectError) {
+      return {
+        name: test.name,
+        passed: Boolean(parsed && parsed.error),
+        details: parsed?.error || "Expected an error but parsed successfully.",
+      };
+    }
+
+    if (test.expectPackingPlan) {
+      if (!parsed || parsed.error) {
+        return { name: test.name, passed: false, details: parsed?.error || "Could not parse test row." };
+      }
+      const calculated = calculateRoll(parsed, DEFAULT_CORE_DIAMETER, DEFAULT_CALIPER_MIL, DEFAULT_CLEARANCE);
+      const plan = buildMultiBoxPlan([calculated]);
+      return {
+        name: test.name,
+        passed: plan.boxes.length > 0 && plan.unpacked.length === 0,
         details: plan.boxes.length > 0 ? `${plan.boxes.length} box(es), ${plan.unpacked.length} unpacked` : "No plan produced",
       };
     }
@@ -55,7 +150,7 @@ function MultiBoxPackingDiagram({ packingPlan }) {
       <div className="mb-2 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div>
           <h2 className="text-lg font-semibold">2D packing view</h2>
-          <p className="text-xs text-slate-600">Use the arrows to view each box setup. The final box may be partially filled.</p>
+          <p className="text-xs text-slate-600">Use the arrows to view each box setup. Dashed outlines show clearance; solid circles show the actual rolls.</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -66,71 +161,3 @@ function MultiBoxPackingDiagram({ packingPlan }) {
           >
             Prev
           </button>
-          <Badge good>Box {safeIndex + 1} of {packingPlan.boxes.length}</Badge>
-          <button
-            type="button"
-            onClick={() => setBoxIndex((i) => Math.min(packingPlan.boxes.length - 1, i + 1))}
-            disabled={safeIndex === packingPlan.boxes.length - 1}
-            className="rounded-xl border border-slate-300 px-3 py-1 text-sm disabled:opacity-40"
-          >
-            Next
-          </button>
-        </div>
-      </div>
-
-      <div className="mb-2 grid gap-2 text-xs text-slate-600 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-xl bg-slate-100 px-3 py-2">Box: <span className="font-semibold">{current.boxName}</span></div>
-        <div className="rounded-xl bg-slate-100 px-3 py-2">Top view: {orientation.L} x {orientation.W}</div>
-        <div className="rounded-xl bg-slate-100 px-3 py-2">Height: {orientation.H}</div>
-        <div className="rounded-xl bg-slate-100 px-3 py-2">Rolls in box: {current.placedCount}</div>
-      </div>
-
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_210px]">
-        <div>
-          <div className="mb-1 text-sm font-medium text-slate-700">Layer 1 overhead view</div>
-          <div className="w-full overflow-hidden rounded-2xl border bg-slate-50 p-2" style={{ height: "clamp(310px, calc(100vh - 260px), 660px)" }}>
-            <svg width="100%" height="100%" viewBox={`0 0 ${svgW} ${svgH}`} preserveAspectRatio="xMidYMid meet" className="bg-white">
-              <rect x="0" y="0" width={svgW} height={svgH} fill="white" stroke="currentColor" strokeWidth="2" className="text-slate-800" />
-              {placed.map((roll) => {
-                const cx = roll.x * scale;
-                const cy = roll.y * scale;
-                const r = roll.r * scale;
-                return (
-                  <g key={roll.id}>
-                    <circle cx={cx} cy={cy} r={r} fill="rgb(226 232 240)" stroke="rgb(51 65 85)" strokeWidth="1.5" />
-                    <circle cx={cx} cy={cy} r={Math.max(2, (DEFAULT_CORE_DIAMETER / 2) * scale)} fill="white" stroke="rgb(100 116 139)" strokeWidth="1" />
-                    <text
-                      x={cx}
-                      y={cy + 3}
-                      textAnchor="middle"
-                      fontSize={Math.max(7, Math.min(11, r * 0.45))}
-                      className="fill-slate-700 font-semibold"
-                    >
-                      {roll.label}
-                    </text>
-                  </g>
-                );
-              })}
-            </svg>
-          </div>
-        </div>
-
-        <div>
-          <div className="mb-1 text-sm font-medium text-slate-700">Layer view</div>
-          <div className="rounded-2xl border bg-slate-50 p-3">
-            <svg width={layerViewW} height={layerViewH} viewBox={`0 0 ${layerViewW} ${layerViewH}`} className="mx-auto bg-white">
-              <rect x="0" y="0" width={layerViewW} height={layerViewH} fill="white" stroke="currentColor" strokeWidth="2" className="text-slate-800" />
-              {current.layers.map((layer, index) => {
-                const layerHeight = Math.max(layer.layerHeight * layerScaleY, 6);
-                const y = layerViewH - current.layers.slice(0, index + 1).reduce((sum, l) => sum + l.layerHeight * layerScaleY, 0);
-                return (
-                  <g key={index}>
-                    <rect
-                      x="8"
-                      y={Math.max(0, y)}
-                      width={layerViewW - 16}
-                      height={layerHeight}
-                      fill="rgb(226 232 240)"
-                      stroke="rgb(51 65 85)"
-                      strokeWidth="1"
-                    />

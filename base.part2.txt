@@ -1,3 +1,47 @@
+  }
+
+  if (!Number.isFinite(height) || height <= 0) {
+    return { raw: item, error: "Height must be a positive number." };
+  }
+
+  if (!Number.isFinite(rolls) || rolls <= 0) {
+    return { raw: item, error: "Number of rolls must be a positive number." };
+  }
+
+  if (!Number.isFinite(labelsPerRoll) || labelsPerRoll <= 0) {
+    return { raw: item, error: "Label quantity per roll must be a positive number." };
+  }
+
+  const shortEdge = Math.min(width, height);
+  const longEdge = Math.max(width, height);
+  const repeat = repeatEdge === "long" ? longEdge : shortEdge;
+  const labelHeight = repeatEdge === "long" ? shortEdge : longEdge;
+  const rollHeight = labelHeight + DEFAULT_CORE_HEIGHT_OVERHANG;
+  const repeatPitch = repeat + DEFAULT_LABEL_GAP;
+
+  return {
+    id: item.id,
+    width,
+    height,
+    dimA: width,
+    dimB: height,
+    repeatEdge,
+    repeatEdgeLabel: REPEAT_EDGE_LABELS[repeatEdge],
+    repeat,
+    repeatPitch,
+    labelGap: DEFAULT_LABEL_GAP,
+    labelHeight,
+    coreHeightOverhang: DEFAULT_CORE_HEIGHT_OVERHANG,
+    rollHeight,
+    rolls,
+    labelsPerRoll,
+    description: `${formatNumber(width)} x ${formatNumber(height)} - ${REPEAT_EDGE_LABELS[repeatEdge].toLowerCase()} repeat, ${rolls} roll${rolls === 1 ? "" : "s"}, ${labelsPerRoll.toLocaleString()} labels/roll`,
+  };
+}
+
+function calculateRoll(item, coreDiameter, caliperMil, clearance) {
+  const safeCoreDiameter = Math.max(Number(coreDiameter) || DEFAULT_CORE_DIAMETER, 0.001);
+  const safeCaliperMil = Math.max(Number(caliperMil) || DEFAULT_CALIPER_MIL, 0.001);
   const safeClearance = Math.max(Number(clearance) || 0, 0);
   const caliperInches = safeCaliperMil / 1000;
   const repeatPitch = item.repeatPitch || item.repeat + DEFAULT_LABEL_GAP;
@@ -117,98 +161,3 @@ function chooseBestBoxForRemaining(instances, availableBoxes = BOXES) {
         fillsAllRemaining: packed.placedCount === instances.length,
         remaining: packed.remaining,
       };
-
-      if (!best) {
-        best = candidate;
-        continue;
-      }
-
-      const better =
-        (candidate.fillsAllRemaining && !best.fillsAllRemaining) ||
-        candidate.placedCount > best.placedCount ||
-        (candidate.placedCount === best.placedCount && candidate.box.volume < best.box.volume);
-
-      if (better) best = candidate;
-    }
-  }
-
-  return best;
-}
-
-function buildMultiBoxPlan(rollGroups, availableBoxes = BOXES) {
-  let remaining = expandRollInstances(rollGroups);
-  const boxes = [];
-  let guard = 0;
-
-  while (remaining.length > 0 && guard < 200) {
-    guard += 1;
-    const best = chooseBestBoxForRemaining(remaining, availableBoxes);
-
-    if (!best || best.placedCount === 0) {
-      return { boxes, unpacked: remaining };
-    }
-
-    boxes.push({
-      boxName: best.boxName,
-      box: best.box,
-      orientation: best.orientation,
-      layers: best.layers,
-      topViewPlaced: best.topViewPlaced,
-      placedCount: best.placedCount,
-    });
-
-    remaining = best.remaining;
-  }
-
-  return { boxes, unpacked: remaining };
-}
-
-function summarizeBoxMix(boxes) {
-  const counts = new Map();
-  boxes.forEach((boxSetup) => {
-    counts.set(boxSetup.boxName, (counts.get(boxSetup.boxName) || 0) + 1);
-  });
-
-  return Array.from(counts.entries()).map(([boxName, count]) => ({ boxName, count }));
-}
-
-function getRollLabel(groupIndex) {
-  return `${groupIndex + 1}`;
-}
-
-function getRollLabelRange(groupIndex) {
-  return getRollLabel(groupIndex);
-}
-
-function summarizeLayerRollLabels(rolls) {
-  const counts = new Map();
-  rolls.forEach((roll) => {
-    counts.set(roll.label, (counts.get(roll.label) || 0) + 1);
-  });
-
-  return Array.from(counts.entries())
-    .map(([label, count]) => (count === 1 ? label : `${label} (${count})`))
-    .join(", ");
-}
-
-function runTests() {
-  return TEST_CASES.map((test) => {
-    const parsed = normalizeRollInput(test.item, test.repeatEdge);
-
-    if (test.expectError) {
-      return {
-        name: test.name,
-        passed: Boolean(parsed && parsed.error),
-        details: parsed?.error || "Expected an error but parsed successfully.",
-      };
-    }
-
-    if (test.expectPackingPlan) {
-      if (!parsed || parsed.error) {
-        return { name: test.name, passed: false, details: parsed?.error || "Could not parse test row." };
-      }
-      const calculated = calculateRoll(parsed, DEFAULT_CORE_DIAMETER, DEFAULT_CALIPER_MIL, DEFAULT_CLEARANCE);
-      const plan = buildMultiBoxPlan([calculated]);
-      return {
-        name: test.name,
-        passed: plan.boxes.length > 0 && plan.unpacked.length === 0,
