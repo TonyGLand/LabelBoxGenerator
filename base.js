@@ -309,34 +309,32 @@ function chooseBestBoxForRemaining(instances, availableBoxes = BOXES) {
   let best = null;
 
   for (const box of availableBoxes) {
-    for (const [L, W, H] of uniqueOrientations(box)) {
-      const orientation = { L, W, H, box };
-      const packed = packBox(instances, orientation);
-      if (packed.placedCount === 0) continue;
+    const orientation = { L: box.l, W: box.w, H: box.h, box };
+    const packed = packBox(instances, orientation);
+    if (packed.placedCount === 0) continue;
 
-      const candidate = {
-        box,
-        boxName: box.name,
-        orientation,
-        layers: packed.layers,
-        topViewPlaced: packed.topViewPlaced,
-        placedCount: packed.placedCount,
-        fillsAllRemaining: packed.placedCount === instances.length,
-        remaining: packed.remaining,
-      };
+    const candidate = {
+      box,
+      boxName: box.name,
+      orientation,
+      layers: packed.layers,
+      topViewPlaced: packed.topViewPlaced,
+      placedCount: packed.placedCount,
+      fillsAllRemaining: packed.placedCount === instances.length,
+      remaining: packed.remaining,
+    };
 
-      if (!best) {
-        best = candidate;
-        continue;
-      }
-
-      const better =
-        (candidate.fillsAllRemaining && !best.fillsAllRemaining) ||
-        candidate.placedCount > best.placedCount ||
-        (candidate.placedCount === best.placedCount && candidate.box.volume < best.box.volume);
-
-      if (better) best = candidate;
+    if (!best) {
+      best = candidate;
+      continue;
     }
+
+    const better =
+      (candidate.fillsAllRemaining && !best.fillsAllRemaining) ||
+      candidate.placedCount > best.placedCount ||
+      (candidate.placedCount === best.placedCount && candidate.box.volume < best.box.volume);
+
+    if (better) best = candidate;
   }
 
   return best;
@@ -464,15 +462,13 @@ function MultiBoxPackingDiagram({ packingPlan }) {
   const scale = Math.min(viewW / orientation.L, viewH / orientation.W);
   const svgW = orientation.L * scale;
   const svgH = orientation.W * scale;
-  const rollsShown = placed.length;
-  const additionalRolls = Math.max(0, current.placedCount - rollsShown);
   const layerViewW = 170;
   const layerViewH = 220;
   const layerScaleX = layerViewW / orientation.L;
   const layerScaleY = layerViewH / orientation.H;
 
   return (
-    <Panel className="p-3">
+    <Panel className="flex h-full min-h-0 flex-col p-3">
       <div className="mb-2 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div>
           <h2 className="text-lg font-semibold">2D packing view</h2>
@@ -506,82 +502,89 @@ function MultiBoxPackingDiagram({ packingPlan }) {
         <div className="rounded-xl bg-slate-100 px-3 py-2">Rolls in box: {current.placedCount}</div>
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_210px]">
-        <div>
+      <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_230px]">
+        <div className="flex min-h-0 flex-col">
           <div className="mb-1 text-sm font-medium text-slate-700">Layer 1 overhead view</div>
-          <div className="w-full overflow-hidden rounded-2xl border bg-slate-50 p-2" style={{ height: "clamp(260px, calc(100vh - 260px), 560px)" }}>
-            <svg width="100%" height="100%" viewBox={`0 0 ${svgW} ${svgH}`} preserveAspectRatio="xMidYMid meet" className="bg-white">
-              <rect x="0" y="0" width={svgW} height={svgH} fill="white" stroke="currentColor" strokeWidth="2" className="text-slate-800" />
-              {placed.map((roll) => {
-                const cx = roll.x * scale;
-                const cy = roll.y * scale;
-                const clearanceR = roll.r * scale;
-                const actualR = (roll.actualDiameter / 2) * scale;
-                const labelFontSize = Math.max(7, Math.min(11, actualR * 0.45));
-                return (
-                  <g key={roll.id}>
-                    <circle
-                      cx={cx}
-                      cy={cy}
-                      r={clearanceR}
-                      fill="rgb(248 250 252)"
-                      stroke="rgb(203 213 225)"
-                      strokeWidth="1"
-                      strokeDasharray="4 3"
-                    />
-                    <circle cx={cx} cy={cy} r={actualR} fill="rgb(226 232 240)" stroke="rgb(51 65 85)" strokeWidth="1.5" />
-                    <circle cx={cx} cy={cy} r={Math.max(2, (DEFAULT_CORE_DIAMETER / 2) * scale)} fill="white" stroke="rgb(100 116 139)" strokeWidth="1" />
-                    <text
-                      x={cx}
-                      y={cy + 3}
-                      textAnchor="middle"
-                      fontSize={labelFontSize}
-                      className="fill-slate-700 font-semibold"
-                    >
-                      {roll.label}
-                    </text>
-                  </g>
-                );
-              })}
-            </svg>
+          <div className="flex min-h-[260px] flex-1 items-stretch gap-2">
+            <div className="flex items-center justify-center text-xs font-semibold text-slate-500 [writing-mode:vertical-rl] rotate-180">
+              {formatNumber(orientation.W)}&quot;
+            </div>
+            <div className="flex min-w-0 flex-1 flex-col">
+              <div className="min-h-[260px] flex-1 overflow-hidden rounded-2xl border bg-slate-50 p-2">
+                <svg width="100%" height="100%" viewBox={`0 0 ${svgW} ${svgH}`} preserveAspectRatio="xMidYMid meet" className="bg-white">
+                  <rect x="0" y="0" width={svgW} height={svgH} fill="white" stroke="currentColor" strokeWidth="2" className="text-slate-800" />
+                  {placed.map((roll) => {
+                    const cx = roll.x * scale;
+                    const cy = roll.y * scale;
+                    const clearanceR = roll.r * scale;
+                    const actualR = (roll.actualDiameter / 2) * scale;
+                    const labelFontSize = Math.max(10, Math.min(18, actualR * 0.6));
+                    return (
+                      <g key={roll.id}>
+                        <circle
+                          cx={cx}
+                          cy={cy}
+                          r={clearanceR}
+                          fill="rgb(248 250 252)"
+                          stroke="rgb(203 213 225)"
+                          strokeWidth="1"
+                          strokeDasharray="4 3"
+                        />
+                        <circle cx={cx} cy={cy} r={actualR} fill="rgb(226 232 240)" stroke="rgb(51 65 85)" strokeWidth="1.35" />
+                        <circle cx={cx} cy={cy} r={Math.max(2, (DEFAULT_CORE_DIAMETER / 2) * scale)} fill="white" stroke="rgb(100 116 139)" strokeWidth="2.2" />
+                        <text
+                          x={cx}
+                          y={cy + labelFontSize * 0.32}
+                          textAnchor="middle"
+                          fontSize={labelFontSize}
+                          className="fill-slate-700 font-semibold"
+                        >
+                          {roll.label}
+                        </text>
+                      </g>
+                    );
+                  })}
+                </svg>
+              </div>
+              <div className="pt-1 text-center text-xs font-semibold text-slate-500">{formatNumber(orientation.L)}&quot;</div>
+            </div>
           </div>
         </div>
 
         <div>
           <div className="mb-1 text-sm font-medium text-slate-700">Layer view</div>
-          <div className="rounded-2xl border bg-slate-50 p-3">
-            <svg width={layerViewW} height={layerViewH} viewBox={`0 0 ${layerViewW} ${layerViewH}`} className="mx-auto bg-white">
-              <rect x="0" y="0" width={layerViewW} height={layerViewH} fill="white" stroke="currentColor" strokeWidth="2" className="text-slate-800" />
-              {current.layers.map((layer, index) => {
-                const layerHeight = Math.max(layer.layerHeight * layerScaleY, 6);
-                const y = layerViewH - current.layers.slice(0, index + 1).reduce((sum, l) => sum + l.layerHeight * layerScaleY, 0);
-                return (
-                  <g key={index}>
-                    <rect
-                      x="8"
-                      y={Math.max(0, y)}
-                      width={layerViewW - 16}
-                      height={layerHeight}
-                      fill="rgb(226 232 240)"
-                      stroke="rgb(51 65 85)"
-                      strokeWidth="1"
-                    />
-                    <text x={layerViewW / 2} y={Math.max(12, y + layerHeight / 2 + 4)} textAnchor="middle" className="fill-slate-700 text-[10px] font-semibold">
-                      Layer {index + 1}: {layer.placed.length} roll{layer.placed.length === 1 ? "" : "s"}
-                    </text>
-                  </g>
-                );
-              })}
-            </svg>
-            <div className="mt-2 text-center text-xs text-slate-600">Side view of stacked layers.</div>
+          <div className="flex items-center gap-2 rounded-2xl border bg-slate-50 p-3">
+            <div className="flex items-center justify-center text-xs font-semibold text-slate-500 [writing-mode:vertical-rl] rotate-180">
+              {formatNumber(orientation.H)}&quot;
+            </div>
+            <div className="min-w-0 flex-1">
+              <svg width={layerViewW} height={layerViewH} viewBox={`0 0 ${layerViewW} ${layerViewH}`} className="mx-auto bg-white">
+                <rect x="0" y="0" width={layerViewW} height={layerViewH} fill="white" stroke="currentColor" strokeWidth="2" className="text-slate-800" />
+                {current.layers.map((layer, index) => {
+                  const layerHeight = Math.max(layer.layerHeight * layerScaleY, 6);
+                  const y = layerViewH - current.layers.slice(0, index + 1).reduce((sum, l) => sum + l.layerHeight * layerScaleY, 0);
+                  return (
+                    <g key={index}>
+                      <rect
+                        x="8"
+                        y={Math.max(0, y)}
+                        width={layerViewW - 16}
+                        height={layerHeight}
+                        fill="rgb(226 232 240)"
+                        stroke="rgb(51 65 85)"
+                        strokeWidth="1"
+                      />
+                      <text x={layerViewW / 2} y={Math.max(12, y + layerHeight / 2 + 4)} textAnchor="middle" className="fill-slate-700 text-[10px] font-semibold">
+                        Layer {index + 1}: {layer.placed.length} roll{layer.placed.length === 1 ? "" : "s"}
+                      </text>
+                    </g>
+                  );
+                })}
+              </svg>
+              <div className="mt-2 text-center text-xs text-slate-600">Side view of stacked layers.</div>
+            </div>
           </div>
         </div>
-      </div>
-
-      <div className="mt-2 grid gap-2 text-xs text-slate-600 md:grid-cols-3">
-        <div className="rounded-xl bg-slate-100 px-3 py-2">Layers used: {current.layers.length}</div>
-        <div className="rounded-xl bg-slate-100 px-3 py-2">Shown in layer 1: {rollsShown}</div>
-        <div className="rounded-xl bg-slate-100 px-3 py-2">Other layers: {additionalRolls}</div>
       </div>
 
       {packingPlan.unpacked.length > 0 && (
@@ -599,7 +602,7 @@ function RollCalculationsTable({ rolls, onRemove }) {
   }
 
   return (
-    <div className="max-h-[300px] overflow-y-auto overflow-x-hidden rounded-2xl border bg-white">
+    <div className="h-full overflow-y-auto overflow-x-hidden rounded-2xl border bg-white">
       <table className="w-full table-fixed text-sm">
         <thead className="sticky top-0 bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-500">
           <tr>
@@ -652,26 +655,28 @@ function BoxSummary({ packingPlan }) {
   }
 
   return (
-    <div className="max-h-[340px] space-y-2 overflow-y-auto pr-1">
-      {packingPlan.boxes.map((boxSetup, i) => (
-        <div key={i} className="rounded-2xl border border-slate-200 bg-white p-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="font-semibold">Box {i + 1}: {boxSetup.boxName}</div>
-            <Badge good>{boxSetup.placedCount} roll(s)</Badge>
+    <div className="max-h-[380px] overflow-y-auto pr-1">
+      <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
+        {packingPlan.boxes.map((boxSetup, i) => (
+          <div key={i} className="rounded-2xl border border-slate-200 bg-white p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="font-semibold">Box {i + 1}: {boxSetup.boxName}</div>
+              <Badge good>{boxSetup.placedCount} roll(s)</Badge>
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
+              Box size: {boxSetup.orientation.L} x {boxSetup.orientation.W} x {boxSetup.orientation.H}
+            </div>
+            <div className="mt-1 text-xs text-slate-500">Layers used: {boxSetup.layers.length}</div>
+            <div className="mt-2 space-y-1">
+              {boxSetup.layers.map((layer, layerIndex) => (
+                <div key={layerIndex} className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                  <span className="font-semibold text-slate-700">Layer {layerIndex + 1}:</span> {summarizeLayerRollLabels(layer.placed)}
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="mt-1 text-xs text-slate-500">
-            Orientation: {boxSetup.orientation.L} x {boxSetup.orientation.W} x {boxSetup.orientation.H}
-          </div>
-          <div className="mt-1 text-xs text-slate-500">Layers used: {boxSetup.layers.length}</div>
-          <div className="mt-2 space-y-1">
-            {boxSetup.layers.map((layer, layerIndex) => (
-              <div key={layerIndex} className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                <span className="font-semibold text-slate-700">Layer {layerIndex + 1}:</span> {summarizeLayerRollLabels(layer.placed)}
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }
@@ -777,194 +782,207 @@ function LabelRollBoxCalculator() {
           </div>
         </header>
 
-        <div className="grid gap-3 xl:grid-cols-[360px_390px_minmax(0,1fr)] 2xl:grid-cols-[400px_420px_minmax(0,1fr)]">
-          <Panel className="p-3 xl:sticky xl:top-3 xl:self-start">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <h2 className="text-lg font-semibold">Add roll group</h2>
-              <button
-                type="button"
-                onClick={clearRollItems}
-                className="rounded-2xl border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-slate-50"
-              >
-                Clear rolls
-              </button>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-              <NumberField label="Width, in" value={form.width} onChange={(v) => updateForm("width", v)} />
-              <NumberField label="Height, in" value={form.height} onChange={(v) => updateForm("height", v)} />
-              <NumberField label="# of rolls" value={form.rolls} onChange={(v) => updateForm("rolls", v)} step="1" />
-              <NumberField label="Labels / roll" value={form.labelsPerRoll} onChange={(v) => updateForm("labelsPerRoll", v)} step="1" />
-              <SelectField label="Orientation" value={repeatEdge} onChange={setRepeatEdge}>
-                <option value="short">Short edge unwinds first</option>
-                <option value="long">Long edge unwinds first</option>
-              </SelectField>
-            </div>
-
-            {formError && <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{formError}</div>}
-
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={addRollItem}
-                className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
-              >
-                Add roll group
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setForm(EMPTY_FORM);
-                  setFormError("");
-                }}
-                className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-slate-50"
-              >
-                Clear entry fields
-              </button>
-            </div>
-          </Panel>
-
-          <Panel className="space-y-3 p-3 xl:sticky xl:top-3 xl:self-start">
-            <div className="flex items-center gap-2 text-lg font-semibold">
-              <span>Shipment plan</span>
-            </div>
-
-            {result.errors.length > 0 && (
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                <div className="font-semibold">Fix these roll rows</div>
-                <ul className="mt-2 list-disc space-y-1 pl-5">
-                  {result.errors.map((e, i) => (
-                    <li key={`${i}-${e.error}`}>{e.error}</li>
-                  ))}
-                </ul>
+        <div className="grid gap-3 xl:grid-cols-[minmax(420px,0.95fr)_minmax(0,1.25fr)]">
+          <div className="grid gap-3 xl:h-[calc(100vh-140px)] xl:grid-rows-[1fr_2fr]">
+            <Panel className="overflow-auto p-3">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h2 className="text-lg font-semibold">Add roll group</h2>
+                <button
+                  type="button"
+                  onClick={clearRollItems}
+                  className="rounded-2xl border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-slate-50"
+                >
+                  Clear rolls
+                </button>
               </div>
-            )}
 
-            {result.valid.length === 0 ? (
-              <div className="rounded-2xl bg-slate-100 p-4 text-slate-600">Add at least one valid roll group.</div>
-            ) : result.availableBoxes.length === 0 ? (
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
-                <div className="font-semibold">Select at least one box size.</div>
-                <div className="mt-2 text-sm">Open Settings and choose the box sizes this order can use.</div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <NumberField label="Width, in" value={form.width} onChange={(v) => updateForm("width", v)} />
+                <NumberField label="Height, in" value={form.height} onChange={(v) => updateForm("height", v)} />
+                <NumberField label="# of rolls" value={form.rolls} onChange={(v) => updateForm("rolls", v)} step="1" />
+                <NumberField label="Labels / roll" value={form.labelsPerRoll} onChange={(v) => updateForm("labelsPerRoll", v)} step="1" />
+                <SelectField label="Orientation" value={repeatEdge} onChange={setRepeatEdge}>
+                  <option value="short">Short edge unwinds first</option>
+                  <option value="long">Long edge unwinds first</option>
+                </SelectField>
               </div>
-            ) : result.packingPlan.boxes.length > 0 ? (
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-                <div className="text-emerald-800">Recommended shipment plan</div>
-                <div className="mt-2 text-4xl font-bold tracking-tight text-emerald-950">
-                  {result.packingPlan.boxes.length} box{result.packingPlan.boxes.length === 1 ? "" : "es"}
+
+              {formError && <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{formError}</div>}
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={addRollItem}
+                  className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
+                >
+                  Add roll group
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setForm(EMPTY_FORM);
+                    setFormError("");
+                  }}
+                  className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-slate-50"
+                >
+                  Clear entry fields
+                </button>
+              </div>
+            </Panel>
+
+            <Panel className="flex min-h-0 flex-col p-3">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex rounded-2xl bg-slate-100 p-1">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("rolls")}
+                    className={`rounded-xl px-4 py-2 text-sm font-semibold ${activeTab === "rolls" ? "bg-white text-slate-950 shadow-sm" : "text-slate-600 hover:text-slate-950"}`}
+                  >
+                    Roll calculations
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("settings")}
+                    className={`rounded-xl px-4 py-2 text-sm font-semibold ${activeTab === "settings" ? "bg-white text-slate-950 shadow-sm" : "text-slate-600 hover:text-slate-950"}`}
+                  >
+                    Settings
+                  </button>
                 </div>
-                <div className="mt-2 text-sm text-emerald-900">
-                  Box mix: {result.boxMix.map((item) => `${item.count} x ${item.boxName}`).join(", ")}
-                </div>
-                {result.packingPlan.unpacked.length > 0 && (
-                  <div className="mt-2 text-sm text-amber-800">
-                    {result.packingPlan.unpacked.length} roll(s) could not be packed with the current box list.
+              </div>
+
+              {activeTab === "rolls" ? (
+                <div className="flex min-h-0 flex-1 flex-col space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <h2 className="text-lg font-semibold">Roll calculations</h2>
+                    {result.valid.length > 0 && <Badge good>{result.valid.length} group{result.valid.length === 1 ? "" : "s"}</Badge>}
                   </div>
-                )}
-              </div>
-            ) : (
-              <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-900">
-                <div className="font-semibold">No workable packing plan found.</div>
-                <div className="mt-2 text-sm">Try adding a larger box size or splitting the order manually.</div>
-              </div>
-            )}
+                  <div className="min-h-0 flex-1">
+                    <RollCalculationsTable rolls={result.valid} onRemove={removeRollItem} />
+                  </div>
+                </div>
+              ) : (
+                <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                  <div className="space-y-5">
+                    <div>
+                      <h2 className="text-lg font-semibold">Settings</h2>
+                      <p className="mt-1 text-sm text-slate-600">These values apply to every roll group in the current order.</p>
+                    </div>
 
-            <div className="border-t border-slate-200 pt-3">
-              <h2 className="mb-2 text-lg font-semibold">Box summary</h2>
-              <BoxSummary packingPlan={result.packingPlan} />
-            </div>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <NumberField label="Core diameter, in" value={coreDiameter} onChange={setCoreDiameter} step="0.001" />
+                      <NumberField label="Total caliper, mil" value={caliperMil} onChange={setCaliperMil} step="0.1" />
+                      <NumberField label="Clearance, in" value={clearance} onChange={setClearance} step="0.05" />
+                    </div>
 
-            <div className="grid grid-cols-3 gap-3 text-center">
-              <div className="rounded-2xl bg-slate-50 p-3 shadow-sm">
-                <div className="text-xs text-slate-500">Rolls</div>
-                <div className="text-xl font-semibold">{result.totalRolls}</div>
-              </div>
-              <div className="rounded-2xl bg-slate-50 p-3 shadow-sm">
-                <div className="text-xs text-slate-500">Roll volume</div>
-                <div className="text-xl font-semibold">{formatNumber(result.totalCylinderVolume, 0)}</div>
-              </div>
-              <div className="rounded-2xl bg-slate-50 p-3 shadow-sm">
-                <div className="text-xs text-slate-500">Packed est.</div>
-                <div className="text-xl font-semibold">{formatNumber(result.totalBoundingVolume, 0)}</div>
-              </div>
-            </div>
-          </Panel>
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <h3 className="font-semibold">Allowed box sizes</h3>
+                          <p className="mt-1 text-sm text-slate-600">Select one or more box sizes the order can use.</p>
+                        </div>
+                        <div className="flex gap-2">
+                          <button type="button" onClick={selectAllBoxes} className="rounded-xl border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50">Select all</button>
+                          <button type="button" onClick={clearBoxSelection} className="rounded-xl border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50">Clear</button>
+                        </div>
+                      </div>
+                      <div className="max-h-[280px] overflow-y-auto rounded-2xl border bg-white p-3">
+                        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                          {BOXES.map((box) => (
+                            <label key={box.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 px-3 py-2 text-sm">
+                              <span>{box.name}</span>
+                              <input
+                                type="checkbox"
+                                checked={selectedBoxIds.includes(box.id)}
+                                onChange={() => toggleBoxSelection(box.id)}
+                                className="h-4 w-4 accent-slate-900"
+                              />
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </Panel>
+          </div>
 
-          <div className="min-w-0 xl:sticky xl:top-3 xl:self-start">
+          <div className="min-w-0 xl:h-[calc(100vh-140px)]">
             <MultiBoxPackingDiagram packingPlan={result.packingPlan} />
           </div>
         </div>
 
-        <Panel className="p-3">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex rounded-2xl bg-slate-100 p-1">
-              <button
-                type="button"
-                onClick={() => setActiveTab("rolls")}
-                className={`rounded-xl px-4 py-2 text-sm font-semibold ${activeTab === "rolls" ? "bg-white text-slate-950 shadow-sm" : "text-slate-600 hover:text-slate-950"}`}
-              >
-                Roll calculations
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab("settings")}
-                className={`rounded-xl px-4 py-2 text-sm font-semibold ${activeTab === "settings" ? "bg-white text-slate-950 shadow-sm" : "text-slate-600 hover:text-slate-950"}`}
-              >
-                Settings
-              </button>
-            </div>
+        <Panel className="space-y-3 p-3">
+          <div className="flex items-center gap-2 text-lg font-semibold">
+            <span>Shipment plan</span>
           </div>
 
-          {activeTab === "rolls" ? (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="text-lg font-semibold">Roll calculations</h2>
-                {result.valid.length > 0 && <Badge good>{result.valid.length} group{result.valid.length === 1 ? "" : "s"}</Badge>}
-              </div>
-              <RollCalculationsTable rolls={result.valid} onRemove={removeRollItem} />
-            </div>
-          ) : (
-            <div className="space-y-5">
-              <div>
-                <h2 className="text-lg font-semibold">Settings</h2>
-                <p className="mt-1 text-sm text-slate-600">These values apply to every roll group in the current order.</p>
-              </div>
-
-              <div className="grid gap-3 md:grid-cols-3">
-                <NumberField label="Core diameter, in" value={coreDiameter} onChange={setCoreDiameter} step="0.001" />
-                <NumberField label="Total caliper, mil" value={caliperMil} onChange={setCaliperMil} step="0.1" />
-                <NumberField label="Clearance, in" value={clearance} onChange={setClearance} step="0.05" />
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h3 className="font-semibold">Allowed box sizes</h3>
-                    <p className="mt-1 text-sm text-slate-600">Select one or more box sizes the order can use.</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <button type="button" onClick={selectAllBoxes} className="rounded-xl border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50">Select all</button>
-                    <button type="button" onClick={clearBoxSelection} className="rounded-xl border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50">Clear</button>
-                  </div>
-                </div>
-                <div className="max-h-[280px] overflow-y-auto rounded-2xl border bg-white p-3">
-                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                    {BOXES.map((box) => (
-                      <label key={box.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 px-3 py-2 text-sm">
-                        <span>{box.name}</span>
-                        <input
-                          type="checkbox"
-                          checked={selectedBoxIds.includes(box.id)}
-                          onChange={() => toggleBoxSelection(box.id)}
-                          className="h-4 w-4 accent-slate-900"
-                        />
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
+          {result.errors.length > 0 && (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              <div className="font-semibold">Fix these roll rows</div>
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                {result.errors.map((e, i) => (
+                  <li key={`${i}-${e.error}`}>{e.error}</li>
+                ))}
+              </ul>
             </div>
           )}
+
+          <div className="grid gap-3 xl:grid-cols-[360px_minmax(0,1fr)]">
+            <div className="space-y-3">
+              {result.valid.length === 0 ? (
+                <div className="rounded-2xl bg-slate-100 p-4 text-slate-600">Add at least one valid roll group.</div>
+              ) : result.availableBoxes.length === 0 ? (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+                  <div className="font-semibold">Select at least one box size.</div>
+                  <div className="mt-2 text-sm">Open Settings and choose the box sizes this order can use.</div>
+                </div>
+              ) : result.packingPlan.boxes.length > 0 ? (
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                  <div className="text-emerald-800">Recommended shipment plan</div>
+                  <div className="mt-2 text-4xl font-bold tracking-tight text-emerald-950">
+                    {result.packingPlan.boxes.length} box{result.packingPlan.boxes.length === 1 ? "" : "es"}
+                  </div>
+                  <div className="mt-2 text-sm text-emerald-900">
+                    Box mix: {result.boxMix.map((item) => `${item.count} x ${item.boxName}`).join(", ")}
+                  </div>
+                  {result.packingPlan.unpacked.length > 0 && (
+                    <div className="mt-2 text-sm text-amber-800">
+                      {result.packingPlan.unpacked.length} roll(s) could not be packed with the current box list.
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-900">
+                  <div className="font-semibold">No workable packing plan found.</div>
+                  <div className="mt-2 text-sm">Try adding a larger box size or splitting the order manually.</div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div className="rounded-2xl bg-slate-50 p-3 shadow-sm">
+                  <div className="text-xs text-slate-500">Rolls</div>
+                  <div className="text-xl font-semibold">{result.totalRolls}</div>
+                </div>
+                <div className="rounded-2xl bg-slate-50 p-3 shadow-sm">
+                  <div className="text-xs text-slate-500">Roll volume</div>
+                  <div className="text-xl font-semibold">{formatNumber(result.totalCylinderVolume, 0)}</div>
+                </div>
+                <div className="rounded-2xl bg-slate-50 p-3 shadow-sm">
+                  <div className="text-xs text-slate-500">Packed est.</div>
+                  <div className="text-xl font-semibold">{formatNumber(result.totalBoundingVolume, 0)}</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="min-w-0 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-lg font-semibold">Box summary</h2>
+                {result.packingPlan.boxes.length > 0 && <Badge good>{result.packingPlan.boxes.length} box{result.packingPlan.boxes.length === 1 ? "" : "es"}</Badge>}
+              </div>
+              <BoxSummary packingPlan={result.packingPlan} />
+            </div>
+          </div>
         </Panel>
       </div>
     </div>

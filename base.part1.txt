@@ -161,3 +161,6 @@ function normalizeRollInput(item, repeatEdgeChoice = item.repeatEdge || DEFAULT_
 
   if (!Number.isFinite(width) || width <= 0) {
     return { raw: item, error: "Width must be a positive number." };
+  }
+
+  if (!Number.isFinite(height) || height <= 0) {

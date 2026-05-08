@@ -1,6 +1,3 @@
-  }
-
-  if (!Number.isFinite(height) || height <= 0) {
     return { raw: item, error: "Height must be a positive number." };
   }
 
@@ -146,18 +143,24 @@ function chooseBestBoxForRemaining(instances, availableBoxes = BOXES) {
   let best = null;
 
   for (const box of availableBoxes) {
-    for (const [L, W, H] of uniqueOrientations(box)) {
-      const orientation = { L, W, H, box };
-      const packed = packBox(instances, orientation);
-      if (packed.placedCount === 0) continue;
+    const orientation = { L: box.l, W: box.w, H: box.h, box };
+    const packed = packBox(instances, orientation);
+    if (packed.placedCount === 0) continue;
 
-      const candidate = {
-        box,
-        boxName: box.name,
-        orientation,
-        layers: packed.layers,
-        topViewPlaced: packed.topViewPlaced,
-        placedCount: packed.placedCount,
-        fillsAllRemaining: packed.placedCount === instances.length,
-        remaining: packed.remaining,
-      };
+    const candidate = {
+      box,
+      boxName: box.name,
+      orientation,
+      layers: packed.layers,
+      topViewPlaced: packed.topViewPlaced,
+      placedCount: packed.placedCount,
+      fillsAllRemaining: packed.placedCount === instances.length,
+      remaining: packed.remaining,
+    };
+
+    if (!best) {
+      best = candidate;
+      continue;
+    }
+
+    const better =

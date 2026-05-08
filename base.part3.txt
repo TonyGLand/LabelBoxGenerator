@@ -1,16 +1,8 @@
+      (candidate.fillsAllRemaining && !best.fillsAllRemaining) ||
+      candidate.placedCount > best.placedCount ||
+      (candidate.placedCount === best.placedCount && candidate.box.volume < best.box.volume);
 
-      if (!best) {
-        best = candidate;
-        continue;
-      }
-
-      const better =
-        (candidate.fillsAllRemaining && !best.fillsAllRemaining) ||
-        candidate.placedCount > best.placedCount ||
-        (candidate.placedCount === best.placedCount && candidate.box.volume < best.box.volume);
-
-      if (better) best = candidate;
-    }
+    if (better) best = candidate;
   }
 
   return best;
@@ -138,15 +130,13 @@ function MultiBoxPackingDiagram({ packingPlan }) {
   const scale = Math.min(viewW / orientation.L, viewH / orientation.W);
   const svgW = orientation.L * scale;
   const svgH = orientation.W * scale;
-  const rollsShown = placed.length;
-  const additionalRolls = Math.max(0, current.placedCount - rollsShown);
   const layerViewW = 170;
   const layerViewH = 220;
   const layerScaleX = layerViewW / orientation.L;
   const layerScaleY = layerViewH / orientation.H;
 
   return (
-    <Panel className="p-3">
+    <Panel className="flex h-full min-h-0 flex-col p-3">
       <div className="mb-2 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div>
           <h2 className="text-lg font-semibold">2D packing view</h2>
@@ -161,3 +151,16 @@ function MultiBoxPackingDiagram({ packingPlan }) {
           >
             Prev
           </button>
+          <Badge good>Box {safeIndex + 1} of {packingPlan.boxes.length}</Badge>
+          <button
+            type="button"
+            onClick={() => setBoxIndex((i) => Math.min(packingPlan.boxes.length - 1, i + 1))}
+            disabled={safeIndex === packingPlan.boxes.length - 1}
+            className="rounded-xl border border-slate-300 px-3 py-1 text-sm disabled:opacity-40"
+          >
+            Next
+          </button>
+        </div>
+      </div>
+
+      <div className="mb-2 grid gap-2 text-xs text-slate-600 sm:grid-cols-2 xl:grid-cols-4">

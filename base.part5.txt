@@ -1,25 +1,18 @@
-
-  return (
-    <div className="max-h-[340px] space-y-2 overflow-y-auto pr-1">
-      {packingPlan.boxes.map((boxSetup, i) => (
-        <div key={i} className="rounded-2xl border border-slate-200 bg-white p-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="font-semibold">Box {i + 1}: {boxSetup.boxName}</div>
-            <Badge good>{boxSetup.placedCount} roll(s)</Badge>
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
+              Box size: {boxSetup.orientation.L} x {boxSetup.orientation.W} x {boxSetup.orientation.H}
+            </div>
+            <div className="mt-1 text-xs text-slate-500">Layers used: {boxSetup.layers.length}</div>
+            <div className="mt-2 space-y-1">
+              {boxSetup.layers.map((layer, layerIndex) => (
+                <div key={layerIndex} className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                  <span className="font-semibold text-slate-700">Layer {layerIndex + 1}:</span> {summarizeLayerRollLabels(layer.placed)}
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="mt-1 text-xs text-slate-500">
-            Orientation: {boxSetup.orientation.L} x {boxSetup.orientation.W} x {boxSetup.orientation.H}
-          </div>
-          <div className="mt-1 text-xs text-slate-500">Layers used: {boxSetup.layers.length}</div>
-          <div className="mt-2 space-y-1">
-            {boxSetup.layers.map((layer, layerIndex) => (
-              <div key={layerIndex} className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                <span className="font-semibold text-slate-700">Layer {layerIndex + 1}:</span> {summarizeLayerRollLabels(layer.placed)}
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }
@@ -125,39 +118,49 @@ function LabelRollBoxCalculator() {
           </div>
         </header>
 
-        <div className="grid gap-3 xl:grid-cols-[360px_390px_minmax(0,1fr)] 2xl:grid-cols-[400px_420px_minmax(0,1fr)]">
-          <Panel className="p-3 xl:sticky xl:top-3 xl:self-start">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <h2 className="text-lg font-semibold">Add roll group</h2>
-              <button
-                type="button"
-                onClick={clearRollItems}
-                className="rounded-2xl border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-slate-50"
-              >
-                Clear rolls
-              </button>
-            </div>
+        <div className="grid gap-3 xl:grid-cols-[minmax(420px,0.95fr)_minmax(0,1.25fr)]">
+          <div className="grid gap-3 xl:h-[calc(100vh-140px)] xl:grid-rows-[1fr_2fr]">
+            <Panel className="overflow-auto p-3">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h2 className="text-lg font-semibold">Add roll group</h2>
+                <button
+                  type="button"
+                  onClick={clearRollItems}
+                  className="rounded-2xl border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-slate-50"
+                >
+                  Clear rolls
+                </button>
+              </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-              <NumberField label="Width, in" value={form.width} onChange={(v) => updateForm("width", v)} />
-              <NumberField label="Height, in" value={form.height} onChange={(v) => updateForm("height", v)} />
-              <NumberField label="# of rolls" value={form.rolls} onChange={(v) => updateForm("rolls", v)} step="1" />
-              <NumberField label="Labels / roll" value={form.labelsPerRoll} onChange={(v) => updateForm("labelsPerRoll", v)} step="1" />
-              <SelectField label="Orientation" value={repeatEdge} onChange={setRepeatEdge}>
-                <option value="short">Short edge unwinds first</option>
-                <option value="long">Long edge unwinds first</option>
-              </SelectField>
-            </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <NumberField label="Width, in" value={form.width} onChange={(v) => updateForm("width", v)} />
+                <NumberField label="Height, in" value={form.height} onChange={(v) => updateForm("height", v)} />
+                <NumberField label="# of rolls" value={form.rolls} onChange={(v) => updateForm("rolls", v)} step="1" />
+                <NumberField label="Labels / roll" value={form.labelsPerRoll} onChange={(v) => updateForm("labelsPerRoll", v)} step="1" />
+                <SelectField label="Orientation" value={repeatEdge} onChange={setRepeatEdge}>
+                  <option value="short">Short edge unwinds first</option>
+                  <option value="long">Long edge unwinds first</option>
+                </SelectField>
+              </div>
 
-            {formError && <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{formError}</div>}
+              {formError && <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{formError}</div>}
 
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={addRollItem}
-                className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
-              >
-                Add roll group
-              </button>
-              <button
-                type="button"
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={addRollItem}
+                  className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
+                >
+                  Add roll group
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setForm(EMPTY_FORM);
+                    setFormError("");
+                  }}
+                  className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-slate-50"
+                >
+                  Clear entry fields
+                </button>
+              </div>
