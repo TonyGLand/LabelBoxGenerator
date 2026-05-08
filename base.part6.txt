@@ -77,7 +77,7 @@
             </Panel>
           </div>
 
-          <div className="min-w-0 xl:[height:min(52vh,500px)]">
+          <div className="min-w-0 xl:[height:min(62vh,620px)]">
             <MultiBoxPackingDiagram packingPlan={result.packingPlan} />
           </div>
         </div>

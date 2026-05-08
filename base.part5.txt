@@ -119,8 +119,8 @@ function LabelRollBoxCalculator() {
         </header>
 
         <div className="grid gap-3 xl:grid-cols-[minmax(420px,0.95fr)_minmax(0,1.25fr)]">
-          <div className="grid gap-3 xl:grid-rows-[1fr_1.35fr] xl:[height:min(52vh,500px)]">
-            <Panel className="overflow-auto p-3">
+          <div className="grid gap-3 xl:grid-rows-[290px_minmax(0,1fr)] xl:[height:min(62vh,620px)]">
+            <Panel className="overflow-visible p-3">
               <div className="mb-2 flex items-center justify-between gap-3">
                 <h2 className="text-lg font-semibold">Add roll group</h2>
                 <button
