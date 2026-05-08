@@ -1,3 +1,4 @@
+              <Badge good>{boxSetup.placedCount} roll(s)</Badge>
             </div>
             <div className="mt-1 text-xs text-slate-500">
               Box size: {boxSetup.orientation.L} x {boxSetup.orientation.W} x {boxSetup.orientation.H}
@@ -24,6 +25,7 @@ function LabelRollBoxCalculator() {
   const [coreDiameter, setCoreDiameter] = useState(DEFAULT_CORE_DIAMETER);
   const [caliperMil, setCaliperMil] = useState(DEFAULT_CALIPER_MIL);
   const [clearance, setClearance] = useState(DEFAULT_CLEARANCE);
+  const [extraPercent, setExtraPercent] = useState(DEFAULT_EXTRA_PERCENT);
   const [repeatEdge, setRepeatEdge] = useState(DEFAULT_REPEAT_EDGE);
   const [selectedBoxIds, setSelectedBoxIds] = useState(DEFAULT_SELECTED_BOX_IDS);
   const [activeTab, setActiveTab] = useState("rolls");
@@ -35,7 +37,7 @@ function LabelRollBoxCalculator() {
     const errors = parsed.filter((p) => p.error);
     const valid = parsed
       .filter((p) => !p.error)
-      .map((p) => calculateRoll(p, Number(coreDiameter), Number(caliperMil), Number(clearance)));
+      .map((p) => calculateRoll(p, Number(coreDiameter), Number(caliperMil), Number(clearance), Number(extraPercent)));
     const packingPlan = valid.length ? buildMultiBoxPlan(valid, availableBoxes) : { boxes: [], unpacked: [] };
     const boxMix = summarizeBoxMix(packingPlan.boxes);
     const totalRolls = valid.reduce((sum, r) => sum + r.rolls, 0);
@@ -53,7 +55,7 @@ function LabelRollBoxCalculator() {
       totalCylinderVolume,
       totalBoundingVolume,
     };
-  }, [rollItems, coreDiameter, caliperMil, clearance, repeatEdge, selectedBoxIds]);
+  }, [rollItems, coreDiameter, caliperMil, clearance, extraPercent, repeatEdge, selectedBoxIds]);
 
 
   function updateForm(field, value) {
@@ -138,8 +140,8 @@ function LabelRollBoxCalculator() {
                 <NumberField label="# of rolls" value={form.rolls} onChange={(v) => updateForm("rolls", v)} step="1" />
                 <NumberField label="Labels / roll" value={form.labelsPerRoll} onChange={(v) => updateForm("labelsPerRoll", v)} step="1" />
                 <SelectField label="Orientation" value={repeatEdge} onChange={setRepeatEdge}>
-                  <option value="short">Short edge unwinds first</option>
-                  <option value="long">Long edge unwinds first</option>
+                  <option value="short">Short edge comes off</option>
+                  <option value="long">Long edge comes off</option>
                 </SelectField>
               </div>
 
@@ -163,4 +165,3 @@ function LabelRollBoxCalculator() {
                 >
                   Clear entry fields
                 </button>
-              </div>

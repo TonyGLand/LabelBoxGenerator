@@ -1,3 +1,4 @@
+              </div>
             </Panel>
 
             <Panel className="flex min-h-0 flex-col p-3">
@@ -38,10 +39,11 @@
                       <p className="mt-1 text-sm text-slate-600">These values apply to every roll group in the current order.</p>
                     </div>
 
-                    <div className="grid gap-3 md:grid-cols-3">
+                    <div className="grid gap-3 md:grid-cols-4">
                       <NumberField label="Core diameter, in" value={coreDiameter} onChange={setCoreDiameter} step="0.001" />
                       <NumberField label="Total caliper, mil" value={caliperMil} onChange={setCaliperMil} step="0.1" />
                       <NumberField label="Clearance, in" value={clearance} onChange={setClearance} step="0.05" />
+                      <NumberField label="Extra amount, %" value={extraPercent} onChange={setExtraPercent} step="0.1" />
                     </div>
 
                     <div className="space-y-3">

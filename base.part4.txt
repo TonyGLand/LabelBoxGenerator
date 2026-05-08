@@ -1,3 +1,5 @@
+
+      <div className="mb-2 grid gap-2 text-xs text-slate-600 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-xl bg-slate-100 px-3 py-2">Box: <span className="font-semibold">{current.boxName}</span></div>
         <div className="rounded-xl bg-slate-100 px-3 py-2">Top view: {orientation.L} x {orientation.W}</div>
         <div className="rounded-xl bg-slate-100 px-3 py-2">Height: {orientation.H}</div>
@@ -113,7 +115,7 @@ function RollCalculationsTable({ rolls, onRemove }) {
             <th className="p-3">Height</th>
             <th className="p-3">Rolls</th>
             <th className="p-3">Labels / roll</th>
-            <th className="p-3">Edge</th>
+            <th className="p-3">Orientation</th>
             <th className="p-3">Diameter</th>
             <th className="p-3">Eff. size</th>
             <th className="p-3">Action</th>
@@ -163,4 +165,3 @@ function BoxSummary({ packingPlan }) {
           <div key={i} className="rounded-2xl border border-slate-200 bg-white p-3">
             <div className="flex items-center justify-between gap-3">
               <div className="font-semibold">Box {i + 1}: {boxSetup.boxName}</div>
-              <Badge good>{boxSetup.placedCount} roll(s)</Badge>

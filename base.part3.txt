@@ -1,3 +1,6 @@
+    }
+
+    const better =
       (candidate.fillsAllRemaining && !best.fillsAllRemaining) ||
       candidate.placedCount > best.placedCount ||
       (candidate.placedCount === best.placedCount && candidate.box.volume < best.box.volume);
@@ -80,7 +83,7 @@ function runTests() {
       if (!parsed || parsed.error) {
         return { name: test.name, passed: false, details: parsed?.error || "Could not parse test row." };
       }
-      const calculated = calculateRoll(parsed, DEFAULT_CORE_DIAMETER, DEFAULT_CALIPER_MIL, DEFAULT_CLEARANCE);
+      const calculated = calculateRoll(parsed, DEFAULT_CORE_DIAMETER, DEFAULT_CALIPER_MIL, DEFAULT_CLEARANCE, DEFAULT_EXTRA_PERCENT);
       const plan = buildMultiBoxPlan([calculated]);
       return {
         name: test.name,
@@ -162,5 +165,3 @@ function MultiBoxPackingDiagram({ packingPlan }) {
           </button>
         </div>
       </div>
-
-      <div className="mb-2 grid gap-2 text-xs text-slate-600 sm:grid-cols-2 xl:grid-cols-4">

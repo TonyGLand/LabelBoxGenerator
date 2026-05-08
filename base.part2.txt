@@ -11,8 +11,8 @@
 
   const shortEdge = Math.min(width, height);
   const longEdge = Math.max(width, height);
-  const repeat = repeatEdge === "long" ? longEdge : shortEdge;
-  const labelHeight = repeatEdge === "long" ? shortEdge : longEdge;
+  const labelHeight = repeatEdge === "long" ? longEdge : shortEdge;
+  const repeat = repeatEdge === "long" ? shortEdge : longEdge;
   const rollHeight = labelHeight + DEFAULT_CORE_HEIGHT_OVERHANG;
   const repeatPitch = repeat + DEFAULT_LABEL_GAP;
 
@@ -32,17 +32,19 @@
     rollHeight,
     rolls,
     labelsPerRoll,
-    description: `${formatNumber(width)} x ${formatNumber(height)} - ${REPEAT_EDGE_LABELS[repeatEdge].toLowerCase()} repeat, ${rolls} roll${rolls === 1 ? "" : "s"}, ${labelsPerRoll.toLocaleString()} labels/roll`,
+    description: `${formatNumber(width)} x ${formatNumber(height)} - ${REPEAT_EDGE_LABELS[repeatEdge].toLowerCase()} orientation, ${rolls} roll${rolls === 1 ? "" : "s"}, ${labelsPerRoll.toLocaleString()} labels/roll`,
   };
 }
 
-function calculateRoll(item, coreDiameter, caliperMil, clearance) {
+function calculateRoll(item, coreDiameter, caliperMil, clearance, extraPercent = DEFAULT_EXTRA_PERCENT) {
   const safeCoreDiameter = Math.max(Number(coreDiameter) || DEFAULT_CORE_DIAMETER, 0.001);
   const safeCaliperMil = Math.max(Number(caliperMil) || DEFAULT_CALIPER_MIL, 0.001);
   const safeClearance = Math.max(Number(clearance) || 0, 0);
+  const safeExtraPercent = Math.max(Number(extraPercent) || 0, 0);
   const caliperInches = safeCaliperMil / 1000;
   const repeatPitch = item.repeatPitch || item.repeat + DEFAULT_LABEL_GAP;
-  const woundLength = repeatPitch * item.labelsPerRoll;
+  const effectiveLabelsPerRoll = item.labelsPerRoll * (1 + safeExtraPercent / 100);
+  const woundLength = repeatPitch * effectiveLabelsPerRoll;
   const outerDiameter = Math.sqrt(safeCoreDiameter ** 2 + (4 * woundLength * caliperInches) / Math.PI);
   const effectiveDiameter = outerDiameter + safeClearance;
   const effectiveHeight = item.rollHeight + safeClearance;
@@ -52,6 +54,8 @@ function calculateRoll(item, coreDiameter, caliperMil, clearance) {
   return {
     ...item,
     woundLength,
+    effectiveLabelsPerRoll,
+    extraPercent: safeExtraPercent,
     outerDiameter,
     effectiveDiameter,
     effectiveHeight,
@@ -161,6 +165,3 @@ function chooseBestBoxForRemaining(instances, availableBoxes = BOXES) {
     if (!best) {
       best = candidate;
       continue;
-    }
-
-    const better =

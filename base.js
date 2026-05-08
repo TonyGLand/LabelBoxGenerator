@@ -3,6 +3,7 @@ const { useMemo, useState } = React;
 const DEFAULT_CORE_DIAMETER = 3.025;
 const DEFAULT_CALIPER_MIL = 5.8;
 const DEFAULT_CLEARANCE = 0.25;
+const DEFAULT_EXTRA_PERCENT = 3;
 const DEFAULT_LABEL_GAP = 0.25;
 const DEFAULT_CORE_HEIGHT_OVERHANG = 0.5;
 const DEFAULT_REPEAT_EDGE = "short";
@@ -50,20 +51,20 @@ const EMPTY_FORM = {
 
 const TEST_CASES = [
   {
-    name: "Short edge becomes repeat length",
+    name: "Short edge orientation uses the opposite edge as repeat length",
     item: { width: 4, height: 3.396, rolls: 2, labelsPerRoll: 500 },
-    expect: { repeat: 3.396, repeatPitch: 3.646, labelHeight: 4, rollHeight: 4.5, rolls: 2, labelsPerRoll: 500 },
+    expect: { repeat: 4, repeatPitch: 4.25, labelHeight: 3.396, rollHeight: 3.896, rolls: 2, labelsPerRoll: 500 },
   },
   {
-    name: "Tall/narrow label still uses shorter edge as repeat",
+    name: "Tall/narrow label uses the opposite edge from orientation",
     item: { width: 2, height: 3, rolls: 4, labelsPerRoll: 1000 },
-    expect: { repeat: 2, repeatPitch: 2.25, labelHeight: 3, rollHeight: 3.5, rolls: 4, labelsPerRoll: 1000 },
+    expect: { repeat: 3, repeatPitch: 3.25, labelHeight: 2, rollHeight: 2.5, rolls: 4, labelsPerRoll: 1000 },
   },
   {
-    name: "Long edge can become repeat length",
+    name: "Long edge orientation uses the short edge as repeat length",
     item: { width: 4, height: 3.396, rolls: 2, labelsPerRoll: 500 },
     repeatEdge: "long",
-    expect: { repeat: 4, repeatPitch: 4.25, labelHeight: 3.396, rollHeight: 3.896, rolls: 2, labelsPerRoll: 500 },
+    expect: { repeat: 3.396, repeatPitch: 3.646, labelHeight: 4, rollHeight: 4.5, rolls: 2, labelsPerRoll: 500 },
   },
   {
     name: "Rejects missing labels per roll",
@@ -177,8 +178,8 @@ function normalizeRollInput(item, repeatEdgeChoice = item.repeatEdge || DEFAULT_
 
   const shortEdge = Math.min(width, height);
   const longEdge = Math.max(width, height);
-  const repeat = repeatEdge === "long" ? longEdge : shortEdge;
-  const labelHeight = repeatEdge === "long" ? shortEdge : longEdge;
+  const labelHeight = repeatEdge === "long" ? longEdge : shortEdge;
+  const repeat = repeatEdge === "long" ? shortEdge : longEdge;
   const rollHeight = labelHeight + DEFAULT_CORE_HEIGHT_OVERHANG;
   const repeatPitch = repeat + DEFAULT_LABEL_GAP;
 
@@ -198,17 +199,19 @@ function normalizeRollInput(item, repeatEdgeChoice = item.repeatEdge || DEFAULT_
     rollHeight,
     rolls,
     labelsPerRoll,
-    description: `${formatNumber(width)} x ${formatNumber(height)} - ${REPEAT_EDGE_LABELS[repeatEdge].toLowerCase()} repeat, ${rolls} roll${rolls === 1 ? "" : "s"}, ${labelsPerRoll.toLocaleString()} labels/roll`,
+    description: `${formatNumber(width)} x ${formatNumber(height)} - ${REPEAT_EDGE_LABELS[repeatEdge].toLowerCase()} orientation, ${rolls} roll${rolls === 1 ? "" : "s"}, ${labelsPerRoll.toLocaleString()} labels/roll`,
   };
 }
 
-function calculateRoll(item, coreDiameter, caliperMil, clearance) {
+function calculateRoll(item, coreDiameter, caliperMil, clearance, extraPercent = DEFAULT_EXTRA_PERCENT) {
   const safeCoreDiameter = Math.max(Number(coreDiameter) || DEFAULT_CORE_DIAMETER, 0.001);
   const safeCaliperMil = Math.max(Number(caliperMil) || DEFAULT_CALIPER_MIL, 0.001);
   const safeClearance = Math.max(Number(clearance) || 0, 0);
+  const safeExtraPercent = Math.max(Number(extraPercent) || 0, 0);
   const caliperInches = safeCaliperMil / 1000;
   const repeatPitch = item.repeatPitch || item.repeat + DEFAULT_LABEL_GAP;
-  const woundLength = repeatPitch * item.labelsPerRoll;
+  const effectiveLabelsPerRoll = item.labelsPerRoll * (1 + safeExtraPercent / 100);
+  const woundLength = repeatPitch * effectiveLabelsPerRoll;
   const outerDiameter = Math.sqrt(safeCoreDiameter ** 2 + (4 * woundLength * caliperInches) / Math.PI);
   const effectiveDiameter = outerDiameter + safeClearance;
   const effectiveHeight = item.rollHeight + safeClearance;
@@ -218,6 +221,8 @@ function calculateRoll(item, coreDiameter, caliperMil, clearance) {
   return {
     ...item,
     woundLength,
+    effectiveLabelsPerRoll,
+    extraPercent: safeExtraPercent,
     outerDiameter,
     effectiveDiameter,
     effectiveHeight,
@@ -412,7 +417,7 @@ function runTests() {
       if (!parsed || parsed.error) {
         return { name: test.name, passed: false, details: parsed?.error || "Could not parse test row." };
       }
-      const calculated = calculateRoll(parsed, DEFAULT_CORE_DIAMETER, DEFAULT_CALIPER_MIL, DEFAULT_CLEARANCE);
+      const calculated = calculateRoll(parsed, DEFAULT_CORE_DIAMETER, DEFAULT_CALIPER_MIL, DEFAULT_CLEARANCE, DEFAULT_EXTRA_PERCENT);
       const plan = buildMultiBoxPlan([calculated]);
       return {
         name: test.name,
@@ -611,7 +616,7 @@ function RollCalculationsTable({ rolls, onRemove }) {
             <th className="p-3">Height</th>
             <th className="p-3">Rolls</th>
             <th className="p-3">Labels / roll</th>
-            <th className="p-3">Edge</th>
+            <th className="p-3">Orientation</th>
             <th className="p-3">Diameter</th>
             <th className="p-3">Eff. size</th>
             <th className="p-3">Action</th>
@@ -688,6 +693,7 @@ function LabelRollBoxCalculator() {
   const [coreDiameter, setCoreDiameter] = useState(DEFAULT_CORE_DIAMETER);
   const [caliperMil, setCaliperMil] = useState(DEFAULT_CALIPER_MIL);
   const [clearance, setClearance] = useState(DEFAULT_CLEARANCE);
+  const [extraPercent, setExtraPercent] = useState(DEFAULT_EXTRA_PERCENT);
   const [repeatEdge, setRepeatEdge] = useState(DEFAULT_REPEAT_EDGE);
   const [selectedBoxIds, setSelectedBoxIds] = useState(DEFAULT_SELECTED_BOX_IDS);
   const [activeTab, setActiveTab] = useState("rolls");
@@ -699,7 +705,7 @@ function LabelRollBoxCalculator() {
     const errors = parsed.filter((p) => p.error);
     const valid = parsed
       .filter((p) => !p.error)
-      .map((p) => calculateRoll(p, Number(coreDiameter), Number(caliperMil), Number(clearance)));
+      .map((p) => calculateRoll(p, Number(coreDiameter), Number(caliperMil), Number(clearance), Number(extraPercent)));
     const packingPlan = valid.length ? buildMultiBoxPlan(valid, availableBoxes) : { boxes: [], unpacked: [] };
     const boxMix = summarizeBoxMix(packingPlan.boxes);
     const totalRolls = valid.reduce((sum, r) => sum + r.rolls, 0);
@@ -717,7 +723,7 @@ function LabelRollBoxCalculator() {
       totalCylinderVolume,
       totalBoundingVolume,
     };
-  }, [rollItems, coreDiameter, caliperMil, clearance, repeatEdge, selectedBoxIds]);
+  }, [rollItems, coreDiameter, caliperMil, clearance, extraPercent, repeatEdge, selectedBoxIds]);
 
 
   function updateForm(field, value) {
@@ -802,8 +808,8 @@ function LabelRollBoxCalculator() {
                 <NumberField label="# of rolls" value={form.rolls} onChange={(v) => updateForm("rolls", v)} step="1" />
                 <NumberField label="Labels / roll" value={form.labelsPerRoll} onChange={(v) => updateForm("labelsPerRoll", v)} step="1" />
                 <SelectField label="Orientation" value={repeatEdge} onChange={setRepeatEdge}>
-                  <option value="short">Short edge unwinds first</option>
-                  <option value="long">Long edge unwinds first</option>
+                  <option value="short">Short edge comes off</option>
+                  <option value="long">Long edge comes off</option>
                 </SelectField>
               </div>
 
@@ -868,10 +874,11 @@ function LabelRollBoxCalculator() {
                       <p className="mt-1 text-sm text-slate-600">These values apply to every roll group in the current order.</p>
                     </div>
 
-                    <div className="grid gap-3 md:grid-cols-3">
+                    <div className="grid gap-3 md:grid-cols-4">
                       <NumberField label="Core diameter, in" value={coreDiameter} onChange={setCoreDiameter} step="0.001" />
                       <NumberField label="Total caliper, mil" value={caliperMil} onChange={setCaliperMil} step="0.1" />
                       <NumberField label="Clearance, in" value={clearance} onChange={setClearance} step="0.05" />
+                      <NumberField label="Extra amount, %" value={extraPercent} onChange={setExtraPercent} step="0.1" />
                     </div>
 
                     <div className="space-y-3">
