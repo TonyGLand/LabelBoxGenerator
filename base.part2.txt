@@ -1,31 +1,3 @@
-  const repeat = repeatEdge === "long" ? longEdge : shortEdge;
-  const labelHeight = repeatEdge === "long" ? shortEdge : longEdge;
-  const rollHeight = labelHeight + DEFAULT_CORE_HEIGHT_OVERHANG;
-  const repeatPitch = repeat + DEFAULT_LABEL_GAP;
-
-  return {
-    id: item.id,
-    width,
-    height,
-    dimA: width,
-    dimB: height,
-    repeatEdge,
-    repeatEdgeLabel: REPEAT_EDGE_LABELS[repeatEdge],
-    repeat,
-    repeatPitch,
-    labelGap: DEFAULT_LABEL_GAP,
-    labelHeight,
-    coreHeightOverhang: DEFAULT_CORE_HEIGHT_OVERHANG,
-    rollHeight,
-    rolls,
-    labelsPerRoll,
-    description: `${formatNumber(width)} x ${formatNumber(height)} - ${REPEAT_EDGE_LABELS[repeatEdge].toLowerCase()} repeat, ${rolls} roll${rolls === 1 ? "" : "s"}, ${labelsPerRoll.toLocaleString()} labels/roll`,
-  };
-}
-
-function calculateRoll(item, coreDiameter, caliperMil, clearance) {
-  const safeCoreDiameter = Math.max(Number(coreDiameter) || DEFAULT_CORE_DIAMETER, 0.001);
-  const safeCaliperMil = Math.max(Number(caliperMil) || DEFAULT_CALIPER_MIL, 0.001);
   const safeClearance = Math.max(Number(clearance) || 0, 0);
   const caliperInches = safeCaliperMil / 1000;
   const repeatPitch = item.repeatPitch || item.repeat + DEFAULT_LABEL_GAP;
@@ -177,3 +149,66 @@ function buildMultiBoxPlan(rollGroups, availableBoxes = BOXES) {
     }
 
     boxes.push({
+      boxName: best.boxName,
+      box: best.box,
+      orientation: best.orientation,
+      layers: best.layers,
+      topViewPlaced: best.topViewPlaced,
+      placedCount: best.placedCount,
+    });
+
+    remaining = best.remaining;
+  }
+
+  return { boxes, unpacked: remaining };
+}
+
+function summarizeBoxMix(boxes) {
+  const counts = new Map();
+  boxes.forEach((boxSetup) => {
+    counts.set(boxSetup.boxName, (counts.get(boxSetup.boxName) || 0) + 1);
+  });
+
+  return Array.from(counts.entries()).map(([boxName, count]) => ({ boxName, count }));
+}
+
+function getRollLabel(groupIndex) {
+  return `${groupIndex + 1}`;
+}
+
+function getRollLabelRange(groupIndex) {
+  return getRollLabel(groupIndex);
+}
+
+function summarizeLayerRollLabels(rolls) {
+  const counts = new Map();
+  rolls.forEach((roll) => {
+    counts.set(roll.label, (counts.get(roll.label) || 0) + 1);
+  });
+
+  return Array.from(counts.entries())
+    .map(([label, count]) => (count === 1 ? label : `${label} (${count})`))
+    .join(", ");
+}
+
+function runTests() {
+  return TEST_CASES.map((test) => {
+    const parsed = normalizeRollInput(test.item, test.repeatEdge);
+
+    if (test.expectError) {
+      return {
+        name: test.name,
+        passed: Boolean(parsed && parsed.error),
+        details: parsed?.error || "Expected an error but parsed successfully.",
+      };
+    }
+
+    if (test.expectPackingPlan) {
+      if (!parsed || parsed.error) {
+        return { name: test.name, passed: false, details: parsed?.error || "Could not parse test row." };
+      }
+      const calculated = calculateRoll(parsed, DEFAULT_CORE_DIAMETER, DEFAULT_CALIPER_MIL, DEFAULT_CLEARANCE);
+      const plan = buildMultiBoxPlan([calculated]);
+      return {
+        name: test.name,
+        passed: plan.boxes.length > 0 && plan.unpacked.length === 0,

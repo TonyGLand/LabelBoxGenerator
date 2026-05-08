@@ -1,3 +1,33 @@
+    return {
+      parsed,
+      errors,
+      valid,
+      packingPlan,
+      boxMix,
+      availableBoxes,
+      totalRolls,
+      totalCylinderVolume,
+      totalBoundingVolume,
+    };
+  }, [rollItems, coreDiameter, caliperMil, clearance, repeatEdge, selectedBoxIds]);
+
+
+  function updateForm(field, value) {
+    setForm((current) => ({ ...current, [field]: value }));
+    setFormError("");
+  }
+
+  function addRollItem() {
+    const item = { id: nextId, ...form };
+    const normalized = normalizeRollInput(item, repeatEdge);
+    if (normalized.error) {
+      setFormError(normalized.error);
+      return;
+    }
+
+    setRollItems((current) => [...current, item]);
+    setNextId((id) => id + 1);
+    setForm(EMPTY_FORM);
     setFormError("");
   }
 
@@ -28,71 +58,28 @@
     setSelectedBoxIds([]);
   }
 
-  function resetSample() {
-    setRollItems(SAMPLE_ROLLS);
-    setForm(EMPTY_FORM);
-    setNextId(4);
-    setRepeatEdge(DEFAULT_REPEAT_EDGE);
-    setSelectedBoxIds(DEFAULT_SELECTED_BOX_IDS);
-    setActiveTab("rolls");
-    setFormError("");
-  }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 text-slate-900 md:p-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <header className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-          <div>
-            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-sm shadow-sm">
-              <span>Label Roll Box Calculator v1</span>
+    <div className="min-h-screen bg-slate-50 p-2 text-slate-900 md:p-3">
+      <div className="mx-auto max-w-none space-y-3">
+        <header className="rounded-2xl bg-white px-4 py-3 shadow-sm">
+          <div className="flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
+            <div>
+              <div className="text-sm font-semibold text-slate-500">Label Roll Box Calculator v1</div>
+              <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Find the practical box plan for label rolls</h1>
             </div>
-            <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Find the practical box plan for label rolls</h1>
-            <p className="mt-2 max-w-3xl text-slate-600">
-              Add one or more roll groups, calculate roll diameters from caliper, gap, core size, and repeat orientation, then build a multi-box packing plan.
+            <p className="max-w-3xl text-xs text-slate-600 md:text-right">
+              Add roll groups, calculate diameters, then build a multi-box packing plan.
             </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setShowTests((v) => !v)}
-              className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-slate-50"
-            >
-              {showTests ? "Hide tests" : "Show tests"}
-            </button>
-            <button
-              type="button"
-              onClick={resetSample}
-              className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-slate-50"
-            >
-              Reset sample
-            </button>
           </div>
         </header>
 
-        {showTests && (
-          <Panel className="p-5">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <h2 className="text-lg font-semibold">Built-in test cases</h2>
-              <Badge good={testsPassed}>{testsPassed ? "All tests passed" : "Some tests failed"}</Badge>
-            </div>
-            <div className="space-y-2">
-              {tests.map((test) => (
-                <div key={test.name} className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="font-medium">{test.name}</span>
-                    <Badge good={test.passed}>{test.passed ? "Pass" : "Fail"}</Badge>
-                  </div>
-                  <div className="mt-1 font-mono text-xs text-slate-600">{test.details}</div>
-                </div>
-              ))}
-            </div>
-          </Panel>
-        )}
+        <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_390px]">
+          <div className="min-w-0 space-y-3">
+            <MultiBoxPackingDiagram packingPlan={result.packingPlan} />
 
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
-          <div className="min-w-0 space-y-6">
-            <Panel className="p-5">
-            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+            <Panel className="p-3">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
               <div className="flex rounded-2xl bg-slate-100 p-1">
                 <button
                   type="button"
@@ -121,7 +108,7 @@
             </div>
 
             {activeTab === "rolls" ? (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 <div className="text-lg font-semibold">Add roll group</div>
                 <div className="grid gap-3 md:grid-cols-4">
                   <NumberField label="Width, in" value={form.width} onChange={(v) => updateForm("width", v)} />
@@ -167,13 +154,3 @@
 
                 <div className="flex items-center justify-between gap-3">
                   <h2 className="text-lg font-semibold">Roll calculations</h2>
-                  {result.valid.length > 0 && <Badge good>{result.valid.length} group{result.valid.length === 1 ? "" : "s"}</Badge>}
-                </div>
-                <RollCalculationsTable rolls={result.valid} onRemove={removeRollItem} />
-              </div>
-            ) : (
-              <div className="space-y-5">
-                <div>
-                  <h2 className="text-lg font-semibold">Settings</h2>
-                  <p className="mt-1 text-sm text-slate-600">These values apply to every roll group in the current order.</p>
-                </div>

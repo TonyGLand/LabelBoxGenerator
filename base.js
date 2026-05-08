@@ -379,13 +379,23 @@ function summarizeBoxMix(boxes) {
   return Array.from(counts.entries()).map(([boxName, count]) => ({ boxName, count }));
 }
 
-function getRollLabel(groupIndex, rollIndex) {
-  return `${groupIndex + 1}.${rollIndex + 1}`;
+function getRollLabel(groupIndex) {
+  return `${groupIndex + 1}`;
 }
 
-function getRollLabelRange(groupIndex, rollCount) {
-  if (rollCount <= 1) return getRollLabel(groupIndex, 0);
-  return `${getRollLabel(groupIndex, 0)}-${getRollLabel(groupIndex, rollCount - 1)}`;
+function getRollLabelRange(groupIndex) {
+  return getRollLabel(groupIndex);
+}
+
+function summarizeLayerRollLabels(rolls) {
+  const counts = new Map();
+  rolls.forEach((roll) => {
+    counts.set(roll.label, (counts.get(roll.label) || 0) + 1);
+  });
+
+  return Array.from(counts.entries())
+    .map(([label, count]) => (count === 1 ? label : `${label} (${count})`))
+    .join(", ");
 }
 
 function runTests() {
@@ -449,12 +459,11 @@ function MultiBoxPackingDiagram({ packingPlan }) {
   const current = packingPlan.boxes[safeIndex];
   const orientation = current.orientation;
   const placed = current.topViewPlaced || [];
-  const viewBoxW = orientation.L;
-  const viewBoxH = orientation.W;
-  const frameStyle = { aspectRatio: `${orientation.L} / ${orientation.W}` };
-  const scale = 1;
-  const svgW = orientation.L;
-  const svgH = orientation.W;
+  const viewW = 820;
+  const viewH = Math.max(260, Math.round((orientation.W / orientation.L) * viewW));
+  const scale = Math.min(viewW / orientation.L, viewH / orientation.W);
+  const svgW = orientation.L * scale;
+  const svgH = orientation.W * scale;
   const rollsShown = placed.length;
   const additionalRolls = Math.max(0, current.placedCount - rollsShown);
   const layerViewW = 170;
@@ -463,11 +472,11 @@ function MultiBoxPackingDiagram({ packingPlan }) {
   const layerScaleY = layerViewH / orientation.H;
 
   return (
-    <Panel className="p-5">
-      <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+    <Panel className="p-3">
+      <div className="mb-2 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div>
           <h2 className="text-lg font-semibold">2D packing view</h2>
-          <p className="text-sm text-slate-600">Use the arrows to view each box setup. The final box may be partially filled.</p>
+          <p className="text-xs text-slate-600">Use the arrows to view each box setup. The final box may be partially filled.</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -490,18 +499,18 @@ function MultiBoxPackingDiagram({ packingPlan }) {
         </div>
       </div>
 
-      <div className="mb-3 grid gap-2 text-sm text-slate-600 md:grid-cols-4">
-        <div className="rounded-xl bg-slate-100 p-3">Box: <span className="font-semibold">{current.boxName}</span></div>
-        <div className="rounded-xl bg-slate-100 p-3">Top view: {orientation.L} x {orientation.W}</div>
-        <div className="rounded-xl bg-slate-100 p-3">Height: {orientation.H}</div>
-        <div className="rounded-xl bg-slate-100 p-3">Rolls in box: {current.placedCount}</div>
+      <div className="mb-2 grid gap-2 text-xs text-slate-600 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-xl bg-slate-100 px-3 py-2">Box: <span className="font-semibold">{current.boxName}</span></div>
+        <div className="rounded-xl bg-slate-100 px-3 py-2">Top view: {orientation.L} x {orientation.W}</div>
+        <div className="rounded-xl bg-slate-100 px-3 py-2">Height: {orientation.H}</div>
+        <div className="rounded-xl bg-slate-100 px-3 py-2">Rolls in box: {current.placedCount}</div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_220px]">
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_210px]">
         <div>
-          <div className="mb-2 text-sm font-medium text-slate-700">Layer 1 overhead view</div>
-          <div className="w-full overflow-hidden rounded-2xl border bg-slate-50 p-4" style={frameStyle}>
-            <svg width="100%" height="100%" viewBox={`0 0 ${viewBoxW} ${viewBoxH}`} preserveAspectRatio="xMidYMid meet" className="bg-white">
+          <div className="mb-1 text-sm font-medium text-slate-700">Layer 1 overhead view</div>
+          <div className="w-full overflow-hidden rounded-2xl border bg-slate-50 p-2" style={{ height: "clamp(310px, calc(100vh - 260px), 660px)" }}>
+            <svg width="100%" height="100%" viewBox={`0 0 ${svgW} ${svgH}`} preserveAspectRatio="xMidYMid meet" className="bg-white">
               <rect x="0" y="0" width={svgW} height={svgH} fill="white" stroke="currentColor" strokeWidth="2" className="text-slate-800" />
               {placed.map((roll) => {
                 const cx = roll.x * scale;
@@ -528,8 +537,8 @@ function MultiBoxPackingDiagram({ packingPlan }) {
         </div>
 
         <div>
-          <div className="mb-2 text-sm font-medium text-slate-700">Layer view</div>
-          <div className="rounded-2xl border bg-slate-50 p-4">
+          <div className="mb-1 text-sm font-medium text-slate-700">Layer view</div>
+          <div className="rounded-2xl border bg-slate-50 p-3">
             <svg width={layerViewW} height={layerViewH} viewBox={`0 0 ${layerViewW} ${layerViewH}`} className="mx-auto bg-white">
               <rect x="0" y="0" width={layerViewW} height={layerViewH} fill="white" stroke="currentColor" strokeWidth="2" className="text-slate-800" />
               {current.layers.map((layer, index) => {
@@ -553,15 +562,15 @@ function MultiBoxPackingDiagram({ packingPlan }) {
                 );
               })}
             </svg>
-            <div className="mt-3 text-center text-xs text-slate-600">Side view of stacked layers within the selected box height.</div>
+            <div className="mt-2 text-center text-xs text-slate-600">Side view of stacked layers.</div>
           </div>
         </div>
       </div>
 
-      <div className="mt-3 grid gap-2 text-sm text-slate-600 md:grid-cols-3">
-        <div className="rounded-xl bg-slate-100 p-3">Layers used: {current.layers.length}</div>
-        <div className="rounded-xl bg-slate-100 p-3">Shown in layer 1: {rollsShown}</div>
-        <div className="rounded-xl bg-slate-100 p-3">Other layers: {additionalRolls}</div>
+      <div className="mt-2 grid gap-2 text-xs text-slate-600 md:grid-cols-3">
+        <div className="rounded-xl bg-slate-100 px-3 py-2">Layers used: {current.layers.length}</div>
+        <div className="rounded-xl bg-slate-100 px-3 py-2">Shown in layer 1: {rollsShown}</div>
+        <div className="rounded-xl bg-slate-100 px-3 py-2">Other layers: {additionalRolls}</div>
       </div>
 
       {packingPlan.unpacked.length > 0 && (
@@ -579,7 +588,7 @@ function RollCalculationsTable({ rolls, onRemove }) {
   }
 
   return (
-    <div className="max-h-[420px] overflow-y-auto overflow-x-hidden rounded-2xl border bg-white">
+    <div className="max-h-[300px] overflow-y-auto overflow-x-hidden rounded-2xl border bg-white">
       <table className="w-full table-fixed text-sm">
         <thead className="sticky top-0 bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-500">
           <tr>
@@ -646,7 +655,7 @@ function BoxSummary({ packingPlan }) {
           <div className="mt-2 space-y-1">
             {boxSetup.layers.map((layer, layerIndex) => (
               <div key={layerIndex} className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                <span className="font-semibold text-slate-700">Layer {layerIndex + 1}:</span> {layer.placed.map((roll) => roll.label).join(", ")}
+                <span className="font-semibold text-slate-700">Layer {layerIndex + 1}:</span> {summarizeLayerRollLabels(layer.placed)}
               </div>
             ))}
           </div>
@@ -666,7 +675,6 @@ function LabelRollBoxCalculator() {
   const [repeatEdge, setRepeatEdge] = useState(DEFAULT_REPEAT_EDGE);
   const [selectedBoxIds, setSelectedBoxIds] = useState(DEFAULT_SELECTED_BOX_IDS);
   const [activeTab, setActiveTab] = useState("rolls");
-  const [showTests, setShowTests] = useState(false);
   const [formError, setFormError] = useState("");
 
   const result = useMemo(() => {
@@ -695,8 +703,6 @@ function LabelRollBoxCalculator() {
     };
   }, [rollItems, coreDiameter, caliperMil, clearance, repeatEdge, selectedBoxIds]);
 
-  const tests = useMemo(() => runTests(), []);
-  const testsPassed = tests.every((t) => t.passed);
 
   function updateForm(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -744,71 +750,28 @@ function LabelRollBoxCalculator() {
     setSelectedBoxIds([]);
   }
 
-  function resetSample() {
-    setRollItems(SAMPLE_ROLLS);
-    setForm(EMPTY_FORM);
-    setNextId(4);
-    setRepeatEdge(DEFAULT_REPEAT_EDGE);
-    setSelectedBoxIds(DEFAULT_SELECTED_BOX_IDS);
-    setActiveTab("rolls");
-    setFormError("");
-  }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 text-slate-900 md:p-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <header className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-          <div>
-            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-sm shadow-sm">
-              <span>Label Roll Box Calculator v1</span>
+    <div className="min-h-screen bg-slate-50 p-2 text-slate-900 md:p-3">
+      <div className="mx-auto max-w-none space-y-3">
+        <header className="rounded-2xl bg-white px-4 py-3 shadow-sm">
+          <div className="flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
+            <div>
+              <div className="text-sm font-semibold text-slate-500">Label Roll Box Calculator v1</div>
+              <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Find the practical box plan for label rolls</h1>
             </div>
-            <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Find the practical box plan for label rolls</h1>
-            <p className="mt-2 max-w-3xl text-slate-600">
-              Add one or more roll groups, calculate roll diameters from caliper, gap, core size, and repeat orientation, then build a multi-box packing plan.
+            <p className="max-w-3xl text-xs text-slate-600 md:text-right">
+              Add roll groups, calculate diameters, then build a multi-box packing plan.
             </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setShowTests((v) => !v)}
-              className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-slate-50"
-            >
-              {showTests ? "Hide tests" : "Show tests"}
-            </button>
-            <button
-              type="button"
-              onClick={resetSample}
-              className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-slate-50"
-            >
-              Reset sample
-            </button>
           </div>
         </header>
 
-        {showTests && (
-          <Panel className="p-5">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <h2 className="text-lg font-semibold">Built-in test cases</h2>
-              <Badge good={testsPassed}>{testsPassed ? "All tests passed" : "Some tests failed"}</Badge>
-            </div>
-            <div className="space-y-2">
-              {tests.map((test) => (
-                <div key={test.name} className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="font-medium">{test.name}</span>
-                    <Badge good={test.passed}>{test.passed ? "Pass" : "Fail"}</Badge>
-                  </div>
-                  <div className="mt-1 font-mono text-xs text-slate-600">{test.details}</div>
-                </div>
-              ))}
-            </div>
-          </Panel>
-        )}
+        <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_390px]">
+          <div className="min-w-0 space-y-3">
+            <MultiBoxPackingDiagram packingPlan={result.packingPlan} />
 
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
-          <div className="min-w-0 space-y-6">
-            <Panel className="p-5">
-            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+            <Panel className="p-3">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
               <div className="flex rounded-2xl bg-slate-100 p-1">
                 <button
                   type="button"
@@ -837,7 +800,7 @@ function LabelRollBoxCalculator() {
             </div>
 
             {activeTab === "rolls" ? (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 <div className="text-lg font-semibold">Add roll group</div>
                 <div className="grid gap-3 md:grid-cols-4">
                   <NumberField label="Width, in" value={form.width} onChange={(v) => updateForm("width", v)} />
@@ -930,11 +893,9 @@ function LabelRollBoxCalculator() {
               </div>
             )}
             </Panel>
-
-            <MultiBoxPackingDiagram packingPlan={result.packingPlan} />
           </div>
 
-          <Panel className="space-y-4 p-5">
+          <Panel className="space-y-3 p-3 xl:sticky xl:top-3 xl:self-start">
             <div className="flex items-center gap-2 text-lg font-semibold">
               <span>Shipment plan</span>
             </div>
@@ -979,8 +940,8 @@ function LabelRollBoxCalculator() {
               </div>
             )}
 
-            <div className="border-t border-slate-200 pt-4">
-              <h2 className="mb-3 text-lg font-semibold">Box summary</h2>
+            <div className="border-t border-slate-200 pt-3">
+              <h2 className="mb-2 text-lg font-semibold">Box summary</h2>
               <BoxSummary packingPlan={result.packingPlan} />
             </div>
 
@@ -997,10 +958,6 @@ function LabelRollBoxCalculator() {
                 <div className="text-xs text-slate-500">Packed est.</div>
                 <div className="text-xl font-semibold">{formatNumber(result.totalBoundingVolume, 0)}</div>
               </div>
-            </div>
-
-            <div className="rounded-2xl bg-slate-100 p-3 text-xs text-slate-600">
-              This is a practical multi-box estimate using {result.availableBoxes.length} selected box size{result.availableBoxes.length === 1 ? "" : "s"}. It assumes upright rolls, stacking allowed, {REPEAT_EDGE_LABELS[repeatEdge].toLowerCase()} unwinds first, a 0.25&quot; label gap, 0.5&quot; core height overhang, and clearance added to diameter and height.
             </div>
           </Panel>
         </div>
