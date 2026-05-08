@@ -783,8 +783,8 @@ function LabelRollBoxCalculator() {
         </header>
 
         <div className="grid gap-3 xl:grid-cols-[minmax(420px,0.95fr)_minmax(0,1.25fr)]">
-          <div className="grid gap-3 xl:grid-rows-[290px_minmax(0,1fr)] xl:[height:min(62vh,620px)]">
-            <Panel className="overflow-visible p-3">
+          <div className="grid gap-3 xl:grid-rows-[350px_minmax(0,1fr)] xl:[height:min(68vh,720px)]">
+            <Panel className="p-3">
               <div className="mb-2 flex items-center justify-between gap-3">
                 <h2 className="text-lg font-semibold">Add roll group</h2>
                 <button
@@ -907,7 +907,7 @@ function LabelRollBoxCalculator() {
             </Panel>
           </div>
 
-          <div className="min-w-0 xl:[height:min(62vh,620px)]">
+          <div className="min-w-0 xl:[height:min(68vh,720px)]">
             <MultiBoxPackingDiagram packingPlan={result.packingPlan} />
           </div>
         </div>
