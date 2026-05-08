@@ -783,9 +783,9 @@ function LabelRollBoxCalculator() {
         </header>
 
         <div className="grid gap-3 xl:grid-cols-[minmax(420px,0.95fr)_minmax(0,1.25fr)]">
-          <div className="grid gap-3 xl:h-[calc(100vh-140px)] xl:grid-rows-[1fr_2fr]">
+          <div className="grid gap-3 xl:grid-rows-[1fr_1.35fr] xl:[height:min(52vh,500px)]">
             <Panel className="overflow-auto p-3">
-              <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="mb-2 flex items-center justify-between gap-3">
                 <h2 className="text-lg font-semibold">Add roll group</h2>
                 <button
                   type="button"
@@ -796,7 +796,7 @@ function LabelRollBoxCalculator() {
                 </button>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-2.5 sm:grid-cols-2">
                 <NumberField label="Width, in" value={form.width} onChange={(v) => updateForm("width", v)} />
                 <NumberField label="Height, in" value={form.height} onChange={(v) => updateForm("height", v)} />
                 <NumberField label="# of rolls" value={form.rolls} onChange={(v) => updateForm("rolls", v)} step="1" />
@@ -807,9 +807,9 @@ function LabelRollBoxCalculator() {
                 </SelectField>
               </div>
 
-              {formError && <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{formError}</div>}
+              {formError && <div className="mt-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{formError}</div>}
 
-              <div className="mt-3 flex flex-wrap gap-2">
+              <div className="mt-2 flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={addRollItem}
@@ -831,7 +831,7 @@ function LabelRollBoxCalculator() {
             </Panel>
 
             <Panel className="flex min-h-0 flex-col p-3">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex rounded-2xl bg-slate-100 p-1">
                   <button
                     type="button"
@@ -907,7 +907,7 @@ function LabelRollBoxCalculator() {
             </Panel>
           </div>
 
-          <div className="min-w-0 xl:h-[calc(100vh-140px)]">
+          <div className="min-w-0 xl:[height:min(52vh,500px)]">
             <MultiBoxPackingDiagram packingPlan={result.packingPlan} />
           </div>
         </div>
