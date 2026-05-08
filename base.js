@@ -236,7 +236,7 @@ function expandRollInstances(rollGroups) {
         id: `${group.id || groupIndex}-${i}`,
         groupId: group.id || groupIndex,
         groupIndex,
-        label: `${groupIndex + 1}.${i + 1}`,
+        label: getRollLabel(groupIndex, i),
         diameter: group.effectiveDiameter,
         actualDiameter: group.outerDiameter,
         height: group.effectiveHeight,
@@ -379,6 +379,15 @@ function summarizeBoxMix(boxes) {
   return Array.from(counts.entries()).map(([boxName, count]) => ({ boxName, count }));
 }
 
+function getRollLabel(groupIndex, rollIndex) {
+  return `${groupIndex + 1}.${rollIndex + 1}`;
+}
+
+function getRollLabelRange(groupIndex, rollCount) {
+  if (rollCount <= 1) return getRollLabel(groupIndex, 0);
+  return `${getRollLabel(groupIndex, 0)}-${getRollLabel(groupIndex, rollCount - 1)}`;
+}
+
 function runTests() {
   return TEST_CASES.map((test) => {
     const parsed = normalizeRollInput(test.item, test.repeatEdge);
@@ -453,7 +462,7 @@ function MultiBoxPackingDiagram({ packingPlan }) {
   const layerScaleY = layerViewH / orientation.H;
 
   return (
-    <Panel className="p-5">
+    <Panel className="max-h-[760px] overflow-y-auto p-5">
       <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div>
           <h2 className="text-lg font-semibold">2D packing view</h2>
@@ -489,11 +498,11 @@ function MultiBoxPackingDiagram({ packingPlan }) {
 
       <div className="grid gap-4 lg:grid-cols-[1fr_220px]">
         <div>
-          <div className="mb-2 text-sm font-medium text-slate-700">Overhead view</div>
-          <div className="overflow-x-auto rounded-2xl border bg-slate-50 p-4">
-            <svg width={svgW} height={svgH} viewBox={`0 0 ${svgW} ${svgH}`} className="max-w-full bg-white">
+          <div className="mb-2 text-sm font-medium text-slate-700">Layer 1 overhead view</div>
+          <div className="max-h-[430px] overflow-auto rounded-2xl border bg-slate-50 p-4">
+            <svg width={svgW} height={svgH} viewBox={`0 0 ${svgW} ${svgH}`} className="bg-white">
               <rect x="0" y="0" width={svgW} height={svgH} fill="white" stroke="currentColor" strokeWidth="2" className="text-slate-800" />
-              {placed.map((roll, index) => {
+              {placed.map((roll) => {
                 const cx = roll.x * scale;
                 const cy = roll.y * scale;
                 const r = roll.r * scale;
@@ -501,11 +510,15 @@ function MultiBoxPackingDiagram({ packingPlan }) {
                   <g key={roll.id}>
                     <circle cx={cx} cy={cy} r={r} fill="rgb(226 232 240)" stroke="rgb(51 65 85)" strokeWidth="1.5" />
                     <circle cx={cx} cy={cy} r={Math.max(2, (DEFAULT_CORE_DIAMETER / 2) * scale)} fill="white" stroke="rgb(100 116 139)" strokeWidth="1" />
-                    {r > 12 && (
-                      <text x={cx} y={cy + 4} textAnchor="middle" className="fill-slate-700 text-[10px] font-semibold">
-                        {index + 1}
-                      </text>
-                    )}
+                    <text
+                      x={cx}
+                      y={cy + 3}
+                      textAnchor="middle"
+                      fontSize={Math.max(7, Math.min(11, r * 0.45))}
+                      className="fill-slate-700 font-semibold"
+                    >
+                      {roll.label}
+                    </text>
                   </g>
                 );
               })}
@@ -546,8 +559,8 @@ function MultiBoxPackingDiagram({ packingPlan }) {
 
       <div className="mt-3 grid gap-2 text-sm text-slate-600 md:grid-cols-3">
         <div className="rounded-xl bg-slate-100 p-3">Layers used: {current.layers.length}</div>
-        <div className="rounded-xl bg-slate-100 p-3">Shown on top layer: {rollsShown}</div>
-        <div className="rounded-xl bg-slate-100 p-3">Stacked above: {additionalRolls}</div>
+        <div className="rounded-xl bg-slate-100 p-3">Shown in layer 1: {rollsShown}</div>
+        <div className="rounded-xl bg-slate-100 p-3">Other layers: {additionalRolls}</div>
       </div>
 
       {packingPlan.unpacked.length > 0 && (
@@ -566,12 +579,13 @@ function RollCalculationsTable({ rolls, onRemove }) {
 
   return (
     <div className="max-h-[420px] overflow-auto rounded-2xl border bg-white">
-      <table className="min-w-[1080px] w-full text-sm">
+      <table className="min-w-[1160px] w-full text-sm">
         <thead className="sticky top-0 bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-500">
           <tr>
             <th className="p-3">Width</th>
             <th className="p-3">Height</th>
             <th className="p-3">Rolls</th>
+            <th className="p-3">Roll IDs</th>
             <th className="p-3">Labels / roll</th>
             <th className="p-3">Edge</th>
             <th className="p-3">Repeat</th>
@@ -583,11 +597,12 @@ function RollCalculationsTable({ rolls, onRemove }) {
           </tr>
         </thead>
         <tbody>
-          {rolls.map((roll) => (
+          {rolls.map((roll, groupIndex) => (
             <tr key={roll.id} className="border-t">
               <td className="p-3">{formatNumber(roll.width)}&quot;</td>
               <td className="p-3">{formatNumber(roll.height)}&quot;</td>
               <td className="p-3">{roll.rolls}</td>
+              <td className="p-3 font-semibold text-slate-700">{getRollLabelRange(groupIndex, roll.rolls)}</td>
               <td className="p-3">{roll.labelsPerRoll.toLocaleString()}</td>
               <td className="p-3">{roll.repeatEdgeLabel}</td>
               <td className="p-3">{formatNumber(roll.repeat)}&quot;</td>
@@ -608,6 +623,40 @@ function RollCalculationsTable({ rolls, onRemove }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function BoxSummary({ packingPlan }) {
+  if (!packingPlan || packingPlan.boxes.length === 0) {
+    return (
+      <div className="rounded-2xl bg-slate-100 p-4 text-sm text-slate-600">
+        Box summary will appear after you add at least one roll group and select at least one box size.
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-h-[340px] space-y-2 overflow-y-auto pr-1">
+      {packingPlan.boxes.map((boxSetup, i) => (
+        <div key={i} className="rounded-2xl border border-slate-200 bg-white p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="font-semibold">Box {i + 1}: {boxSetup.boxName}</div>
+            <Badge good>{boxSetup.placedCount} roll(s)</Badge>
+          </div>
+          <div className="mt-1 text-xs text-slate-500">
+            Orientation: {boxSetup.orientation.L} x {boxSetup.orientation.W} x {boxSetup.orientation.H}
+          </div>
+          <div className="mt-1 text-xs text-slate-500">Layers used: {boxSetup.layers.length}</div>
+          <div className="mt-2 space-y-1">
+            {boxSetup.layers.map((layer, layerIndex) => (
+              <div key={layerIndex} className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                <span className="font-semibold text-slate-700">Layer {layerIndex + 1}:</span> {layer.placed.map((roll) => roll.label).join(", ")}
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -761,8 +810,9 @@ function LabelRollBoxCalculator() {
           </Panel>
         )}
 
-        <div className="grid gap-6 lg:grid-cols-[1fr_420px]">
-          <Panel className="p-5">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
+          <div className="min-w-0 space-y-6">
+            <Panel className="p-5">
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
               <div className="flex rounded-2xl bg-slate-100 p-1">
                 <button
@@ -884,7 +934,10 @@ function LabelRollBoxCalculator() {
                 </div>
               </div>
             )}
-          </Panel>
+            </Panel>
+
+            <MultiBoxPackingDiagram packingPlan={result.packingPlan} />
+          </div>
 
           <Panel className="space-y-4 p-5">
             <div className="flex items-center gap-2 text-lg font-semibold">
@@ -931,6 +984,11 @@ function LabelRollBoxCalculator() {
               </div>
             )}
 
+            <div className="border-t border-slate-200 pt-4">
+              <h2 className="mb-3 text-lg font-semibold">Box summary</h2>
+              <BoxSummary packingPlan={result.packingPlan} />
+            </div>
+
             <div className="grid grid-cols-3 gap-3 text-center">
               <div className="rounded-2xl bg-slate-50 p-3 shadow-sm">
                 <div className="text-xs text-slate-500">Rolls</div>
@@ -952,29 +1010,6 @@ function LabelRollBoxCalculator() {
           </Panel>
         </div>
 
-        <MultiBoxPackingDiagram packingPlan={result.packingPlan} />
-
-        <Panel className="p-5">
-          <h2 className="mb-4 text-lg font-semibold">Box summary</h2>
-          {result.packingPlan.boxes.length === 0 ? (
-            <div className="rounded-2xl bg-slate-100 p-4 text-sm text-slate-600">Box summary will appear after you add at least one roll group and select at least one box size.</div>
-          ) : (
-            <div className="grid gap-2 lg:grid-cols-2">
-              {result.packingPlan.boxes.map((boxSetup, i) => (
-                <div key={i} className="rounded-2xl border border-slate-200 bg-white p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="font-semibold">Box {i + 1}: {boxSetup.boxName}</div>
-                    <Badge good>{boxSetup.placedCount} roll(s)</Badge>
-                  </div>
-                  <div className="mt-1 text-xs text-slate-500">
-                    Orientation: {boxSetup.orientation.L} x {boxSetup.orientation.W} x {boxSetup.orientation.H}
-                  </div>
-                  <div className="mt-1 text-xs text-slate-500">Layers used: {boxSetup.layers.length}</div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Panel>
       </div>
     </div>
   );

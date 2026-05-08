@@ -56,7 +56,7 @@ function expandRollInstances(rollGroups) {
         id: `${group.id || groupIndex}-${i}`,
         groupId: group.id || groupIndex,
         groupIndex,
-        label: `${groupIndex + 1}.${i + 1}`,
+        label: getRollLabel(groupIndex, i),
         diameter: group.effectiveDiameter,
         actualDiameter: group.outerDiameter,
         height: group.effectiveHeight,

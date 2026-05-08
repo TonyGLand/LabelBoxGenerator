@@ -11,6 +11,7 @@ Current assumptions:
 - Roll height includes a fixed 0.5 inch core overhang beyond the label height.
 - Multiple allowed box sizes can be selected per order.
 - Core diameter, caliper, clearance, and allowed box sizes live in the Settings tab.
+- Roll IDs in the calculation table match the IDs shown in the 2D packing view and box summary.
 
 ## GitHub Pages
 
