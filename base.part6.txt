@@ -1,0 +1,84 @@
+                </ul>
+              </div>
+            )}
+
+            {result.valid.length === 0 ? (
+              <div className="rounded-2xl bg-slate-100 p-4 text-slate-600">Add at least one valid roll group.</div>
+            ) : result.availableBoxes.length === 0 ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+                <div className="font-semibold">Select at least one box size.</div>
+                <div className="mt-2 text-sm">Open Settings and choose the box sizes this order can use.</div>
+              </div>
+            ) : result.packingPlan.boxes.length > 0 ? (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                <div className="text-emerald-800">Recommended shipment plan</div>
+                <div className="mt-2 text-4xl font-bold tracking-tight text-emerald-950">
+                  {result.packingPlan.boxes.length} box{result.packingPlan.boxes.length === 1 ? "" : "es"}
+                </div>
+                <div className="mt-2 text-sm text-emerald-900">
+                  Box mix: {result.boxMix.map((item) => `${item.count} x ${item.boxName}`).join(", ")}
+                </div>
+                {result.packingPlan.unpacked.length > 0 && (
+                  <div className="mt-2 text-sm text-amber-800">
+                    {result.packingPlan.unpacked.length} roll(s) could not be packed with the current box list.
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-900">
+                <div className="font-semibold">No workable packing plan found.</div>
+                <div className="mt-2 text-sm">Try adding a larger box size or splitting the order manually.</div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-3 gap-3 text-center">
+              <div className="rounded-2xl bg-slate-50 p-3 shadow-sm">
+                <div className="text-xs text-slate-500">Rolls</div>
+                <div className="text-xl font-semibold">{result.totalRolls}</div>
+              </div>
+              <div className="rounded-2xl bg-slate-50 p-3 shadow-sm">
+                <div className="text-xs text-slate-500">Roll volume</div>
+                <div className="text-xl font-semibold">{formatNumber(result.totalCylinderVolume, 0)}</div>
+              </div>
+              <div className="rounded-2xl bg-slate-50 p-3 shadow-sm">
+                <div className="text-xs text-slate-500">Packed est.</div>
+                <div className="text-xl font-semibold">{formatNumber(result.totalBoundingVolume, 0)}</div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-slate-100 p-3 text-xs text-slate-600">
+              This is a practical multi-box estimate using {result.availableBoxes.length} selected box size{result.availableBoxes.length === 1 ? "" : "s"}. It assumes upright rolls, stacking allowed, {REPEAT_EDGE_LABELS[repeatEdge].toLowerCase()} unwinds first, a 0.25&quot; label gap, 0.5&quot; core height overhang, and clearance added to diameter and height.
+            </div>
+          </Panel>
+        </div>
+
+        <MultiBoxPackingDiagram packingPlan={result.packingPlan} />
+
+        <Panel className="p-5">
+          <h2 className="mb-4 text-lg font-semibold">Box summary</h2>
+          {result.packingPlan.boxes.length === 0 ? (
+            <div className="rounded-2xl bg-slate-100 p-4 text-sm text-slate-600">Box summary will appear after you add at least one roll group and select at least one box size.</div>
+          ) : (
+            <div className="grid gap-2 lg:grid-cols-2">
+              {result.packingPlan.boxes.map((boxSetup, i) => (
+                <div key={i} className="rounded-2xl border border-slate-200 bg-white p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="font-semibold">Box {i + 1}: {boxSetup.boxName}</div>
+                    <Badge good>{boxSetup.placedCount} roll(s)</Badge>
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    Orientation: {boxSetup.orientation.L} x {boxSetup.orientation.W} x {boxSetup.orientation.H}
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500">Layers used: {boxSetup.layers.length}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+const rootElement = document.getElementById("root");
+ReactDOM.createRoot(rootElement).render(<LabelRollBoxCalculator />);

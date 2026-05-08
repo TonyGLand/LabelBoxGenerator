@@ -1,3 +1,50 @@
+  const labelHeight = repeatEdge === "long" ? shortEdge : longEdge;
+  const rollHeight = labelHeight + DEFAULT_CORE_HEIGHT_OVERHANG;
+  const repeatPitch = repeat + DEFAULT_LABEL_GAP;
+
+  return {
+    id: item.id,
+    width,
+    height,
+    dimA: width,
+    dimB: height,
+    repeatEdge,
+    repeatEdgeLabel: REPEAT_EDGE_LABELS[repeatEdge],
+    repeat,
+    repeatPitch,
+    labelGap: DEFAULT_LABEL_GAP,
+    labelHeight,
+    coreHeightOverhang: DEFAULT_CORE_HEIGHT_OVERHANG,
+    rollHeight,
+    rolls,
+    labelsPerRoll,
+    description: `${formatNumber(width)} x ${formatNumber(height)} - ${REPEAT_EDGE_LABELS[repeatEdge].toLowerCase()} repeat, ${rolls} roll${rolls === 1 ? "" : "s"}, ${labelsPerRoll.toLocaleString()} labels/roll`,
+  };
+}
+
+function calculateRoll(item, coreDiameter, caliperMil, clearance) {
+  const safeCoreDiameter = Math.max(Number(coreDiameter) || DEFAULT_CORE_DIAMETER, 0.001);
+  const safeCaliperMil = Math.max(Number(caliperMil) || DEFAULT_CALIPER_MIL, 0.001);
+  const safeClearance = Math.max(Number(clearance) || 0, 0);
+  const caliperInches = safeCaliperMil / 1000;
+  const repeatPitch = item.repeatPitch || item.repeat + DEFAULT_LABEL_GAP;
+  const woundLength = repeatPitch * item.labelsPerRoll;
+  const outerDiameter = Math.sqrt(safeCoreDiameter ** 2 + (4 * woundLength * caliperInches) / Math.PI);
+  const effectiveDiameter = outerDiameter + safeClearance;
+  const effectiveHeight = item.rollHeight + safeClearance;
+  const cylinderVolume = Math.PI * (outerDiameter / 2) ** 2 * item.rollHeight;
+  const boundingVolume = effectiveDiameter * effectiveDiameter * effectiveHeight;
+
+  return {
+    ...item,
+    woundLength,
+    outerDiameter,
+    effectiveDiameter,
+    effectiveHeight,
+    cylinderVolume,
+    boundingVolume,
+    totalCylinderVolume: cylinderVolume * item.rolls,
+    totalBoundingVolume: boundingVolume * item.rolls,
   };
 }
 
@@ -77,11 +124,11 @@ function packBox(instances, orientation) {
   };
 }
 
-function chooseBestBoxForRemaining(instances) {
+function chooseBestBoxForRemaining(instances, availableBoxes = BOXES) {
   if (!instances.length) return null;
   let best = null;
 
-  for (const box of BOXES) {
+  for (const box of availableBoxes) {
     for (const [L, W, H] of uniqueOrientations(box)) {
       const orientation = { L, W, H, box };
       const packed = packBox(instances, orientation);
@@ -94,6 +141,7 @@ function chooseBestBoxForRemaining(instances) {
         layers: packed.layers,
         topViewPlaced: packed.topViewPlaced,
         placedCount: packed.placedCount,
+        fillsAllRemaining: packed.placedCount === instances.length,
         remaining: packed.remaining,
       };
 
@@ -103,6 +151,7 @@ function chooseBestBoxForRemaining(instances) {
       }
 
       const better =
+        (candidate.fillsAllRemaining && !best.fillsAllRemaining) ||
         candidate.placedCount > best.placedCount ||
         (candidate.placedCount === best.placedCount && candidate.box.volume < best.box.volume);
 
@@ -113,14 +162,14 @@ function chooseBestBoxForRemaining(instances) {
   return best;
 }
 
-function buildMultiBoxPlan(rollGroups) {
+function buildMultiBoxPlan(rollGroups, availableBoxes = BOXES) {
   let remaining = expandRollInstances(rollGroups);
   const boxes = [];
   let guard = 0;
 
   while (remaining.length > 0 && guard < 200) {
     guard += 1;
-    const best = chooseBestBoxForRemaining(remaining);
+    const best = chooseBestBoxForRemaining(remaining, availableBoxes);
 
     if (!best || best.placedCount === 0) {
       return { boxes, unpacked: remaining };
@@ -129,52 +178,3 @@ function buildMultiBoxPlan(rollGroups) {
     boxes.push({
       boxName: best.boxName,
       box: best.box,
-      orientation: best.orientation,
-      layers: best.layers,
-      topViewPlaced: best.topViewPlaced,
-      placedCount: best.placedCount,
-    });
-
-    remaining = best.remaining;
-  }
-
-  return { boxes, unpacked: remaining };
-}
-
-function runTests() {
-  return TEST_CASES.map((test) => {
-    const parsed = normalizeRollInput(test.item);
-
-    if (test.expectError) {
-      return {
-        name: test.name,
-        passed: Boolean(parsed && parsed.error),
-        details: parsed?.error || "Expected an error but parsed successfully.",
-      };
-    }
-
-    if (test.expectPackingPlan) {
-      if (!parsed || parsed.error) {
-        return { name: test.name, passed: false, details: parsed?.error || "Could not parse test row." };
-      }
-      const calculated = calculateRoll(parsed, DEFAULT_CORE_DIAMETER, DEFAULT_CALIPER_MIL, DEFAULT_CLEARANCE);
-      const plan = buildMultiBoxPlan([calculated]);
-      return {
-        name: test.name,
-        passed: plan.boxes.length > 0 && plan.unpacked.length === 0,
-        details: plan.boxes.length > 0 ? `${plan.boxes.length} box(es), ${plan.unpacked.length} unpacked` : "No plan produced",
-      };
-    }
-
-    const passed =
-      parsed &&
-      !parsed.error &&
-      parsed.repeat === test.expect.repeat &&
-      parsed.rollHeight === test.expect.rollHeight &&
-      parsed.rolls === test.expect.rolls &&
-      parsed.labelsPerRoll === test.expect.labelsPerRoll;
-
-    return {
-      name: test.name,
-      passed: Boolean(passed),
-      details: passed ? "OK" : `Expected ${JSON.stringify(test.expect)}, got ${JSON.stringify(parsed)}`,

@@ -3,6 +3,14 @@ const { useMemo, useState } = React;
 const DEFAULT_CORE_DIAMETER = 3.025;
 const DEFAULT_CALIPER_MIL = 5.8;
 const DEFAULT_CLEARANCE = 0.25;
+const DEFAULT_LABEL_GAP = 0.25;
+const DEFAULT_CORE_HEIGHT_OVERHANG = 0.5;
+const DEFAULT_REPEAT_EDGE = "short";
+
+const REPEAT_EDGE_LABELS = {
+  short: "Short edge",
+  long: "Long edge",
+};
 
 const BOXES = [
   [5, 5, 4],
@@ -16,13 +24,16 @@ const BOXES = [
   [15, 12, 10],
   [24, 16, 8],
   [24, 16, 12],
-].map(([l, w, h]) => ({
+].map(([l, w, h], index) => ({
+  id: `${l}x${w}x${h}-${index}`,
   name: `${l} x ${w} x ${h}`,
   l,
   w,
   h,
   volume: l * w * h,
 }));
+
+const DEFAULT_SELECTED_BOX_IDS = BOXES.map((box) => box.id);
 
 const SAMPLE_ROLLS = [
   { id: 1, width: 4, height: 3.396, rolls: 2, labelsPerRoll: 500 },
@@ -41,12 +52,18 @@ const TEST_CASES = [
   {
     name: "Short edge becomes repeat length",
     item: { width: 4, height: 3.396, rolls: 2, labelsPerRoll: 500 },
-    expect: { repeat: 3.396, rollHeight: 4, rolls: 2, labelsPerRoll: 500 },
+    expect: { repeat: 3.396, repeatPitch: 3.646, labelHeight: 4, rollHeight: 4.5, rolls: 2, labelsPerRoll: 500 },
   },
   {
     name: "Tall/narrow label still uses shorter edge as repeat",
     item: { width: 2, height: 3, rolls: 4, labelsPerRoll: 1000 },
-    expect: { repeat: 2, rollHeight: 3, rolls: 4, labelsPerRoll: 1000 },
+    expect: { repeat: 2, repeatPitch: 2.25, labelHeight: 3, rollHeight: 3.5, rolls: 4, labelsPerRoll: 1000 },
+  },
+  {
+    name: "Long edge can become repeat length",
+    item: { width: 4, height: 3.396, rolls: 2, labelsPerRoll: 500 },
+    repeatEdge: "long",
+    expect: { repeat: 4, repeatPitch: 4.25, labelHeight: 3.396, rollHeight: 3.896, rolls: 2, labelsPerRoll: 500 },
   },
   {
     name: "Rejects missing labels per roll",
@@ -100,6 +117,21 @@ function NumberField({ label, value, onChange, step = "0.001" }) {
   );
 }
 
+function SelectField({ label, value, onChange, children }) {
+  return (
+    <label className="space-y-1">
+      <span className="text-sm font-medium">{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-2xl border border-slate-300 bg-white px-3 py-2 outline-none focus:border-slate-500"
+      >
+        {children}
+      </select>
+    </label>
+  );
+}
+
 function uniqueOrientations(box) {
   const dims = [box.l, box.w, box.h];
   const perms = [
@@ -120,11 +152,12 @@ function uniqueOrientations(box) {
   });
 }
 
-function normalizeRollInput(item) {
+function normalizeRollInput(item, repeatEdgeChoice = item.repeatEdge || DEFAULT_REPEAT_EDGE) {
   const width = Number(item.width);
   const height = Number(item.height);
   const rolls = Number(item.rolls);
   const labelsPerRoll = Number(String(item.labelsPerRoll).replace(/,/g, ""));
+  const repeatEdge = repeatEdgeChoice === "long" ? "long" : "short";
 
   if (!Number.isFinite(width) || width <= 0) {
     return { raw: item, error: "Width must be a positive number." };
@@ -142,17 +175,30 @@ function normalizeRollInput(item) {
     return { raw: item, error: "Label quantity per roll must be a positive number." };
   }
 
+  const shortEdge = Math.min(width, height);
+  const longEdge = Math.max(width, height);
+  const repeat = repeatEdge === "long" ? longEdge : shortEdge;
+  const labelHeight = repeatEdge === "long" ? shortEdge : longEdge;
+  const rollHeight = labelHeight + DEFAULT_CORE_HEIGHT_OVERHANG;
+  const repeatPitch = repeat + DEFAULT_LABEL_GAP;
+
   return {
     id: item.id,
     width,
     height,
     dimA: width,
     dimB: height,
-    repeat: Math.min(width, height),
-    rollHeight: Math.max(width, height),
+    repeatEdge,
+    repeatEdgeLabel: REPEAT_EDGE_LABELS[repeatEdge],
+    repeat,
+    repeatPitch,
+    labelGap: DEFAULT_LABEL_GAP,
+    labelHeight,
+    coreHeightOverhang: DEFAULT_CORE_HEIGHT_OVERHANG,
+    rollHeight,
     rolls,
     labelsPerRoll,
-    description: `${formatNumber(width)} x ${formatNumber(height)} - ${rolls} roll${rolls === 1 ? "" : "s"}, ${labelsPerRoll.toLocaleString()} labels/roll`,
+    description: `${formatNumber(width)} x ${formatNumber(height)} - ${REPEAT_EDGE_LABELS[repeatEdge].toLowerCase()} repeat, ${rolls} roll${rolls === 1 ? "" : "s"}, ${labelsPerRoll.toLocaleString()} labels/roll`,
   };
 }
 
@@ -161,7 +207,8 @@ function calculateRoll(item, coreDiameter, caliperMil, clearance) {
   const safeCaliperMil = Math.max(Number(caliperMil) || DEFAULT_CALIPER_MIL, 0.001);
   const safeClearance = Math.max(Number(clearance) || 0, 0);
   const caliperInches = safeCaliperMil / 1000;
-  const woundLength = item.repeat * item.labelsPerRoll;
+  const repeatPitch = item.repeatPitch || item.repeat + DEFAULT_LABEL_GAP;
+  const woundLength = repeatPitch * item.labelsPerRoll;
   const outerDiameter = Math.sqrt(safeCoreDiameter ** 2 + (4 * woundLength * caliperInches) / Math.PI);
   const effectiveDiameter = outerDiameter + safeClearance;
   const effectiveHeight = item.rollHeight + safeClearance;
@@ -257,11 +304,11 @@ function packBox(instances, orientation) {
   };
 }
 
-function chooseBestBoxForRemaining(instances) {
+function chooseBestBoxForRemaining(instances, availableBoxes = BOXES) {
   if (!instances.length) return null;
   let best = null;
 
-  for (const box of BOXES) {
+  for (const box of availableBoxes) {
     for (const [L, W, H] of uniqueOrientations(box)) {
       const orientation = { L, W, H, box };
       const packed = packBox(instances, orientation);
@@ -274,6 +321,7 @@ function chooseBestBoxForRemaining(instances) {
         layers: packed.layers,
         topViewPlaced: packed.topViewPlaced,
         placedCount: packed.placedCount,
+        fillsAllRemaining: packed.placedCount === instances.length,
         remaining: packed.remaining,
       };
 
@@ -283,6 +331,7 @@ function chooseBestBoxForRemaining(instances) {
       }
 
       const better =
+        (candidate.fillsAllRemaining && !best.fillsAllRemaining) ||
         candidate.placedCount > best.placedCount ||
         (candidate.placedCount === best.placedCount && candidate.box.volume < best.box.volume);
 
@@ -293,14 +342,14 @@ function chooseBestBoxForRemaining(instances) {
   return best;
 }
 
-function buildMultiBoxPlan(rollGroups) {
+function buildMultiBoxPlan(rollGroups, availableBoxes = BOXES) {
   let remaining = expandRollInstances(rollGroups);
   const boxes = [];
   let guard = 0;
 
   while (remaining.length > 0 && guard < 200) {
     guard += 1;
-    const best = chooseBestBoxForRemaining(remaining);
+    const best = chooseBestBoxForRemaining(remaining, availableBoxes);
 
     if (!best || best.placedCount === 0) {
       return { boxes, unpacked: remaining };
@@ -321,9 +370,18 @@ function buildMultiBoxPlan(rollGroups) {
   return { boxes, unpacked: remaining };
 }
 
+function summarizeBoxMix(boxes) {
+  const counts = new Map();
+  boxes.forEach((boxSetup) => {
+    counts.set(boxSetup.boxName, (counts.get(boxSetup.boxName) || 0) + 1);
+  });
+
+  return Array.from(counts.entries()).map(([boxName, count]) => ({ boxName, count }));
+}
+
 function runTests() {
   return TEST_CASES.map((test) => {
-    const parsed = normalizeRollInput(test.item);
+    const parsed = normalizeRollInput(test.item, test.repeatEdge);
 
     if (test.expectError) {
       return {
@@ -346,13 +404,17 @@ function runTests() {
       };
     }
 
+    const expectedEntries = Object.entries(test.expect || {});
     const passed =
       parsed &&
       !parsed.error &&
-      parsed.repeat === test.expect.repeat &&
-      parsed.rollHeight === test.expect.rollHeight &&
-      parsed.rolls === test.expect.rolls &&
-      parsed.labelsPerRoll === test.expect.labelsPerRoll;
+      expectedEntries.every(([key, expected]) => {
+        const actual = parsed[key];
+        if (typeof actual === "number" && typeof expected === "number") {
+          return Math.abs(actual - expected) < 0.000001;
+        }
+        return actual === expected;
+      });
 
     return {
       name: test.name,
@@ -497,6 +559,59 @@ function MultiBoxPackingDiagram({ packingPlan }) {
   );
 }
 
+function RollCalculationsTable({ rolls, onRemove }) {
+  if (rolls.length === 0) {
+    return <div className="rounded-2xl bg-slate-100 p-4 text-sm text-slate-600">No roll rows yet. Add one above to begin.</div>;
+  }
+
+  return (
+    <div className="max-h-[420px] overflow-auto rounded-2xl border bg-white">
+      <table className="min-w-[1080px] w-full text-sm">
+        <thead className="sticky top-0 bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-500">
+          <tr>
+            <th className="p-3">Width</th>
+            <th className="p-3">Height</th>
+            <th className="p-3">Rolls</th>
+            <th className="p-3">Labels / roll</th>
+            <th className="p-3">Edge</th>
+            <th className="p-3">Repeat</th>
+            <th className="p-3">Pitch</th>
+            <th className="p-3">Roll height</th>
+            <th className="p-3">Diameter</th>
+            <th className="p-3">Eff. size</th>
+            <th className="p-3">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rolls.map((roll) => (
+            <tr key={roll.id} className="border-t">
+              <td className="p-3">{formatNumber(roll.width)}&quot;</td>
+              <td className="p-3">{formatNumber(roll.height)}&quot;</td>
+              <td className="p-3">{roll.rolls}</td>
+              <td className="p-3">{roll.labelsPerRoll.toLocaleString()}</td>
+              <td className="p-3">{roll.repeatEdgeLabel}</td>
+              <td className="p-3">{formatNumber(roll.repeat)}&quot;</td>
+              <td className="p-3">{formatNumber(roll.repeatPitch)}&quot;</td>
+              <td className="p-3">{formatNumber(roll.rollHeight)}&quot;</td>
+              <td className="p-3 font-semibold">{formatNumber(roll.outerDiameter)}&quot;</td>
+              <td className="p-3">{formatNumber(roll.effectiveDiameter)} x {formatNumber(roll.effectiveHeight)}</td>
+              <td className="p-3">
+                <button
+                  type="button"
+                  onClick={() => onRemove(roll.id)}
+                  className="rounded-xl border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50"
+                >
+                  Remove
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function LabelRollBoxCalculator() {
   const [rollItems, setRollItems] = useState(SAMPLE_ROLLS);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -504,16 +619,21 @@ function LabelRollBoxCalculator() {
   const [coreDiameter, setCoreDiameter] = useState(DEFAULT_CORE_DIAMETER);
   const [caliperMil, setCaliperMil] = useState(DEFAULT_CALIPER_MIL);
   const [clearance, setClearance] = useState(DEFAULT_CLEARANCE);
+  const [repeatEdge, setRepeatEdge] = useState(DEFAULT_REPEAT_EDGE);
+  const [selectedBoxIds, setSelectedBoxIds] = useState(DEFAULT_SELECTED_BOX_IDS);
+  const [activeTab, setActiveTab] = useState("rolls");
   const [showTests, setShowTests] = useState(false);
   const [formError, setFormError] = useState("");
 
   const result = useMemo(() => {
-    const parsed = rollItems.map(normalizeRollInput).filter(Boolean);
+    const availableBoxes = BOXES.filter((box) => selectedBoxIds.includes(box.id));
+    const parsed = rollItems.map((item) => normalizeRollInput(item, repeatEdge)).filter(Boolean);
     const errors = parsed.filter((p) => p.error);
     const valid = parsed
       .filter((p) => !p.error)
       .map((p) => calculateRoll(p, Number(coreDiameter), Number(caliperMil), Number(clearance)));
-    const packingPlan = valid.length ? buildMultiBoxPlan(valid) : { boxes: [], unpacked: [] };
+    const packingPlan = valid.length ? buildMultiBoxPlan(valid, availableBoxes) : { boxes: [], unpacked: [] };
+    const boxMix = summarizeBoxMix(packingPlan.boxes);
     const totalRolls = valid.reduce((sum, r) => sum + r.rolls, 0);
     const totalCylinderVolume = valid.reduce((sum, r) => sum + r.totalCylinderVolume, 0);
     const totalBoundingVolume = valid.reduce((sum, r) => sum + r.totalBoundingVolume, 0);
@@ -523,11 +643,13 @@ function LabelRollBoxCalculator() {
       errors,
       valid,
       packingPlan,
+      boxMix,
+      availableBoxes,
       totalRolls,
       totalCylinderVolume,
       totalBoundingVolume,
     };
-  }, [rollItems, coreDiameter, caliperMil, clearance]);
+  }, [rollItems, coreDiameter, caliperMil, clearance, repeatEdge, selectedBoxIds]);
 
   const tests = useMemo(() => runTests(), []);
   const testsPassed = tests.every((t) => t.passed);
@@ -539,7 +661,7 @@ function LabelRollBoxCalculator() {
 
   function addRollItem() {
     const item = { id: nextId, ...form };
-    const normalized = normalizeRollInput(item);
+    const normalized = normalizeRollInput(item, repeatEdge);
     if (normalized.error) {
       setFormError(normalized.error);
       return;
@@ -561,10 +683,30 @@ function LabelRollBoxCalculator() {
     setFormError("");
   }
 
+  function toggleBoxSelection(boxId) {
+    setSelectedBoxIds((current) => {
+      if (current.includes(boxId)) {
+        return current.filter((id) => id !== boxId);
+      }
+      return [...current, boxId];
+    });
+  }
+
+  function selectAllBoxes() {
+    setSelectedBoxIds(DEFAULT_SELECTED_BOX_IDS);
+  }
+
+  function clearBoxSelection() {
+    setSelectedBoxIds([]);
+  }
+
   function resetSample() {
     setRollItems(SAMPLE_ROLLS);
     setForm(EMPTY_FORM);
     setNextId(4);
+    setRepeatEdge(DEFAULT_REPEAT_EDGE);
+    setSelectedBoxIds(DEFAULT_SELECTED_BOX_IDS);
+    setActiveTab("rolls");
     setFormError("");
   }
 
@@ -578,7 +720,7 @@ function LabelRollBoxCalculator() {
             </div>
             <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Find the practical box plan for label rolls</h1>
             <p className="mt-2 max-w-3xl text-slate-600">
-              Add one or more roll groups, calculate roll diameters from caliper and core size, then build a multi-box packing plan.
+              Add one or more roll groups, calculate roll diameters from caliper, gap, core size, and repeat orientation, then build a multi-box packing plan.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -620,57 +762,128 @@ function LabelRollBoxCalculator() {
         )}
 
         <div className="grid gap-6 lg:grid-cols-[1fr_420px]">
-          <Panel className="space-y-4 p-5">
-            <div className="flex items-center justify-between gap-3">
-              <div className="text-lg font-semibold">Add roll group</div>
-              <button
-                type="button"
-                onClick={clearRollItems}
-                className="rounded-2xl border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-slate-50"
-              >
-                Clear rolls
-              </button>
+          <Panel className="p-5">
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex rounded-2xl bg-slate-100 p-1">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("rolls")}
+                  className={`rounded-xl px-4 py-2 text-sm font-semibold ${activeTab === "rolls" ? "bg-white text-slate-950 shadow-sm" : "text-slate-600 hover:text-slate-950"}`}
+                >
+                  Rolls
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("settings")}
+                  className={`rounded-xl px-4 py-2 text-sm font-semibold ${activeTab === "settings" ? "bg-white text-slate-950 shadow-sm" : "text-slate-600 hover:text-slate-950"}`}
+                >
+                  Settings
+                </button>
+              </div>
+              {activeTab === "rolls" && (
+                <button
+                  type="button"
+                  onClick={clearRollItems}
+                  className="rounded-2xl border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-slate-50"
+                >
+                  Clear rolls
+                </button>
+              )}
             </div>
 
-            <div className="grid gap-3 md:grid-cols-4">
-              <NumberField label="Width, in" value={form.width} onChange={(v) => updateForm("width", v)} />
-              <NumberField label="Height, in" value={form.height} onChange={(v) => updateForm("height", v)} />
-              <NumberField label="# of rolls" value={form.rolls} onChange={(v) => updateForm("rolls", v)} step="1" />
-              <NumberField label="Labels / roll" value={form.labelsPerRoll} onChange={(v) => updateForm("labelsPerRoll", v)} step="1" />
-            </div>
+            {activeTab === "rolls" ? (
+              <div className="space-y-4">
+                <div className="text-lg font-semibold">Add roll group</div>
+                <div className="grid gap-3 md:grid-cols-4">
+                  <NumberField label="Width, in" value={form.width} onChange={(v) => updateForm("width", v)} />
+                  <NumberField label="Height, in" value={form.height} onChange={(v) => updateForm("height", v)} />
+                  <NumberField label="# of rolls" value={form.rolls} onChange={(v) => updateForm("rolls", v)} step="1" />
+                  <NumberField label="Labels / roll" value={form.labelsPerRoll} onChange={(v) => updateForm("labelsPerRoll", v)} step="1" />
+                </div>
 
-            {formError && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{formError}</div>}
+                {formError && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{formError}</div>}
 
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={addRollItem}
-                className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
-              >
-                Add to roll calculations
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setForm(EMPTY_FORM);
-                  setFormError("");
-                }}
-                className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-slate-50"
-              >
-                Clear entry fields
-              </button>
-            </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={addRollItem}
+                    className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
+                  >
+                    Add roll group
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setForm(EMPTY_FORM);
+                      setFormError("");
+                    }}
+                    className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-slate-50"
+                  >
+                    Clear entry fields
+                  </button>
+                </div>
 
-            <div className="rounded-2xl bg-slate-100 p-3 text-sm text-slate-700">
-              <div className="font-medium">Input rule</div>
-              <div className="mt-1">Enter the label width and height. The calculator automatically treats the shorter edge as the repeat length coming off the roll, and the longer edge as roll height.</div>
-            </div>
+                <div className="grid gap-3 md:grid-cols-[220px_1fr]">
+                  <SelectField label="Repeat edge" value={repeatEdge} onChange={setRepeatEdge}>
+                    <option value="short">Short edge unwinds first</option>
+                    <option value="long">Long edge unwinds first</option>
+                  </SelectField>
+                  <div className="rounded-2xl bg-slate-100 p-3 text-sm text-slate-700">
+                    <div className="font-medium">Sizing rule</div>
+                    <div className="mt-1">
+                      Pitch = selected repeat edge + 0.25&quot; label gap. Roll height = opposite edge + 0.5&quot; core overhang, then clearance is added for packing.
+                    </div>
+                  </div>
+                </div>
 
-            <div className="grid gap-3 md:grid-cols-3">
-              <NumberField label="Core diameter, in" value={coreDiameter} onChange={setCoreDiameter} step="0.001" />
-              <NumberField label="Total caliper, mil" value={caliperMil} onChange={setCaliperMil} step="0.1" />
-              <NumberField label="Clearance, in" value={clearance} onChange={setClearance} step="0.05" />
-            </div>
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-lg font-semibold">Roll calculations</h2>
+                  {result.valid.length > 0 && <Badge good>{result.valid.length} group{result.valid.length === 1 ? "" : "s"}</Badge>}
+                </div>
+                <RollCalculationsTable rolls={result.valid} onRemove={removeRollItem} />
+              </div>
+            ) : (
+              <div className="space-y-5">
+                <div>
+                  <h2 className="text-lg font-semibold">Settings</h2>
+                  <p className="mt-1 text-sm text-slate-600">These values apply to every roll group in the current order.</p>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-3">
+                  <NumberField label="Core diameter, in" value={coreDiameter} onChange={setCoreDiameter} step="0.001" />
+                  <NumberField label="Total caliper, mil" value={caliperMil} onChange={setCaliperMil} step="0.1" />
+                  <NumberField label="Clearance, in" value={clearance} onChange={setClearance} step="0.05" />
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h3 className="font-semibold">Allowed box sizes</h3>
+                      <p className="mt-1 text-sm text-slate-600">Select one or more box sizes the order can use.</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={selectAllBoxes} className="rounded-xl border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50">Select all</button>
+                      <button type="button" onClick={clearBoxSelection} className="rounded-xl border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50">Clear</button>
+                    </div>
+                  </div>
+                  <div className="max-h-[280px] overflow-y-auto rounded-2xl border bg-white p-3">
+                    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                      {BOXES.map((box) => (
+                        <label key={box.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 px-3 py-2 text-sm">
+                          <span>{box.name}</span>
+                          <input
+                            type="checkbox"
+                            checked={selectedBoxIds.includes(box.id)}
+                            onChange={() => toggleBoxSelection(box.id)}
+                            className="h-4 w-4 accent-slate-900"
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </Panel>
 
           <Panel className="space-y-4 p-5">
@@ -691,6 +904,11 @@ function LabelRollBoxCalculator() {
 
             {result.valid.length === 0 ? (
               <div className="rounded-2xl bg-slate-100 p-4 text-slate-600">Add at least one valid roll group.</div>
+            ) : result.availableBoxes.length === 0 ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+                <div className="font-semibold">Select at least one box size.</div>
+                <div className="mt-2 text-sm">Open Settings and choose the box sizes this order can use.</div>
+              </div>
             ) : result.packingPlan.boxes.length > 0 ? (
               <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
                 <div className="text-emerald-800">Recommended shipment plan</div>
@@ -698,7 +916,7 @@ function LabelRollBoxCalculator() {
                   {result.packingPlan.boxes.length} box{result.packingPlan.boxes.length === 1 ? "" : "es"}
                 </div>
                 <div className="mt-2 text-sm text-emerald-900">
-                  First box: {result.packingPlan.boxes[0].boxName}
+                  Box mix: {result.boxMix.map((item) => `${item.count} x ${item.boxName}`).join(", ")}
                 </div>
                 {result.packingPlan.unpacked.length > 0 && (
                   <div className="mt-2 text-sm text-amber-800">
@@ -729,95 +947,34 @@ function LabelRollBoxCalculator() {
             </div>
 
             <div className="rounded-2xl bg-slate-100 p-3 text-xs text-slate-600">
-              This is a practical multi-box estimate. It assumes upright rolls, stacking allowed, short edge unwinds first, and tight packing with clearance added to diameter and height.
+              This is a practical multi-box estimate using {result.availableBoxes.length} selected box size{result.availableBoxes.length === 1 ? "" : "s"}. It assumes upright rolls, stacking allowed, {REPEAT_EDGE_LABELS[repeatEdge].toLowerCase()} unwinds first, a 0.25&quot; label gap, 0.5&quot; core height overhang, and clearance added to diameter and height.
             </div>
           </Panel>
         </div>
 
         <MultiBoxPackingDiagram packingPlan={result.packingPlan} />
 
-        <div className="grid gap-6 lg:grid-cols-2">
-          <Panel className="p-5">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <h2 className="text-lg font-semibold">Roll calculations</h2>
-              {result.valid.length > 0 && (
-                <button
-                  type="button"
-                  onClick={clearRollItems}
-                  className="rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100"
-                >
-                  Remove all rolls
-                </button>
-              )}
-            </div>
-            {result.valid.length === 0 ? (
-              <div className="rounded-2xl bg-slate-100 p-4 text-sm text-slate-600">No roll rows yet. Add one above to begin.</div>
-            ) : (
-              <div className="overflow-x-auto rounded-2xl border bg-white">
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="p-3">Width</th>
-                      <th className="p-3">Height</th>
-                      <th className="p-3">Rolls</th>
-                      <th className="p-3">Labels / roll</th>
-                      <th className="p-3">Repeat</th>
-                      <th className="p-3">Roll height</th>
-                      <th className="p-3">Diameter</th>
-                      <th className="p-3">Eff. size</th>
-                      <th className="p-3">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {result.valid.map((r) => (
-                      <tr key={r.id} className="border-t">
-                        <td className="p-3">{formatNumber(r.width)}&quot;</td>
-                        <td className="p-3">{formatNumber(r.height)}&quot;</td>
-                        <td className="p-3">{r.rolls}</td>
-                        <td className="p-3">{r.labelsPerRoll.toLocaleString()}</td>
-                        <td className="p-3">{formatNumber(r.repeat)}&quot;</td>
-                        <td className="p-3">{formatNumber(r.rollHeight)}&quot;</td>
-                        <td className="p-3 font-semibold">{formatNumber(r.outerDiameter)}&quot;</td>
-                        <td className="p-3">{formatNumber(r.effectiveDiameter)} x {formatNumber(r.effectiveHeight)}</td>
-                        <td className="p-3">
-                          <button
-                            type="button"
-                            onClick={() => removeRollItem(r.id)}
-                            className="rounded-xl border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50"
-                          >
-                            Remove
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Panel>
-
-          <Panel className="p-5">
-            <h2 className="mb-4 text-lg font-semibold">Box summary</h2>
-            {result.packingPlan.boxes.length === 0 ? (
-              <div className="rounded-2xl bg-slate-100 p-4 text-sm text-slate-600">Box summary will appear after you add at least one roll group.</div>
-            ) : (
-              <div className="space-y-2">
-                {result.packingPlan.boxes.map((boxSetup, i) => (
-                  <div key={i} className="rounded-2xl border border-slate-200 bg-white p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="font-semibold">Box {i + 1}: {boxSetup.boxName}</div>
-                      <Badge good>{boxSetup.placedCount} roll(s)</Badge>
-                    </div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      Orientation: {boxSetup.orientation.L} x {boxSetup.orientation.W} x {boxSetup.orientation.H}
-                    </div>
-                    <div className="mt-1 text-xs text-slate-500">Layers used: {boxSetup.layers.length}</div>
+        <Panel className="p-5">
+          <h2 className="mb-4 text-lg font-semibold">Box summary</h2>
+          {result.packingPlan.boxes.length === 0 ? (
+            <div className="rounded-2xl bg-slate-100 p-4 text-sm text-slate-600">Box summary will appear after you add at least one roll group and select at least one box size.</div>
+          ) : (
+            <div className="grid gap-2 lg:grid-cols-2">
+              {result.packingPlan.boxes.map((boxSetup, i) => (
+                <div key={i} className="rounded-2xl border border-slate-200 bg-white p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="font-semibold">Box {i + 1}: {boxSetup.boxName}</div>
+                    <Badge good>{boxSetup.placedCount} roll(s)</Badge>
                   </div>
-                ))}
-              </div>
-            )}
-          </Panel>
-        </div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    Orientation: {boxSetup.orientation.L} x {boxSetup.orientation.W} x {boxSetup.orientation.H}
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500">Layers used: {boxSetup.layers.length}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Panel>
       </div>
     </div>
   );

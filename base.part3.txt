@@ -1,3 +1,65 @@
+      orientation: best.orientation,
+      layers: best.layers,
+      topViewPlaced: best.topViewPlaced,
+      placedCount: best.placedCount,
+    });
+
+    remaining = best.remaining;
+  }
+
+  return { boxes, unpacked: remaining };
+}
+
+function summarizeBoxMix(boxes) {
+  const counts = new Map();
+  boxes.forEach((boxSetup) => {
+    counts.set(boxSetup.boxName, (counts.get(boxSetup.boxName) || 0) + 1);
+  });
+
+  return Array.from(counts.entries()).map(([boxName, count]) => ({ boxName, count }));
+}
+
+function runTests() {
+  return TEST_CASES.map((test) => {
+    const parsed = normalizeRollInput(test.item, test.repeatEdge);
+
+    if (test.expectError) {
+      return {
+        name: test.name,
+        passed: Boolean(parsed && parsed.error),
+        details: parsed?.error || "Expected an error but parsed successfully.",
+      };
+    }
+
+    if (test.expectPackingPlan) {
+      if (!parsed || parsed.error) {
+        return { name: test.name, passed: false, details: parsed?.error || "Could not parse test row." };
+      }
+      const calculated = calculateRoll(parsed, DEFAULT_CORE_DIAMETER, DEFAULT_CALIPER_MIL, DEFAULT_CLEARANCE);
+      const plan = buildMultiBoxPlan([calculated]);
+      return {
+        name: test.name,
+        passed: plan.boxes.length > 0 && plan.unpacked.length === 0,
+        details: plan.boxes.length > 0 ? `${plan.boxes.length} box(es), ${plan.unpacked.length} unpacked` : "No plan produced",
+      };
+    }
+
+    const expectedEntries = Object.entries(test.expect || {});
+    const passed =
+      parsed &&
+      !parsed.error &&
+      expectedEntries.every(([key, expected]) => {
+        const actual = parsed[key];
+        if (typeof actual === "number" && typeof expected === "number") {
+          return Math.abs(actual - expected) < 0.000001;
+        }
+        return actual === expected;
+      });
+
+    return {
+      name: test.name,
+      passed: Boolean(passed),
+      details: passed ? "OK" : `Expected ${JSON.stringify(test.expect)}, got ${JSON.stringify(parsed)}`,
     };
   });
 }
@@ -116,65 +178,3 @@ function MultiBoxPackingDiagram({ packingPlan }) {
                   </g>
                 );
               })}
-            </svg>
-            <div className="mt-3 text-center text-xs text-slate-600">Side view of stacked layers within the selected box height.</div>
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-3 grid gap-2 text-sm text-slate-600 md:grid-cols-3">
-        <div className="rounded-xl bg-slate-100 p-3">Layers used: {current.layers.length}</div>
-        <div className="rounded-xl bg-slate-100 p-3">Shown on top layer: {rollsShown}</div>
-        <div className="rounded-xl bg-slate-100 p-3">Stacked above: {additionalRolls}</div>
-      </div>
-
-      {packingPlan.unpacked.length > 0 && (
-        <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-900">
-          {packingPlan.unpacked.length} roll(s) could not be packed into the available box list.
-        </div>
-      )}
-    </Panel>
-  );
-}
-
-function LabelRollBoxCalculator() {
-  const [rollItems, setRollItems] = useState(SAMPLE_ROLLS);
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [nextId, setNextId] = useState(4);
-  const [coreDiameter, setCoreDiameter] = useState(DEFAULT_CORE_DIAMETER);
-  const [caliperMil, setCaliperMil] = useState(DEFAULT_CALIPER_MIL);
-  const [clearance, setClearance] = useState(DEFAULT_CLEARANCE);
-  const [showTests, setShowTests] = useState(false);
-  const [formError, setFormError] = useState("");
-
-  const result = useMemo(() => {
-    const parsed = rollItems.map(normalizeRollInput).filter(Boolean);
-    const errors = parsed.filter((p) => p.error);
-    const valid = parsed
-      .filter((p) => !p.error)
-      .map((p) => calculateRoll(p, Number(coreDiameter), Number(caliperMil), Number(clearance)));
-    const packingPlan = valid.length ? buildMultiBoxPlan(valid) : { boxes: [], unpacked: [] };
-    const totalRolls = valid.reduce((sum, r) => sum + r.rolls, 0);
-    const totalCylinderVolume = valid.reduce((sum, r) => sum + r.totalCylinderVolume, 0);
-    const totalBoundingVolume = valid.reduce((sum, r) => sum + r.totalBoundingVolume, 0);
-
-    return {
-      parsed,
-      errors,
-      valid,
-      packingPlan,
-      totalRolls,
-      totalCylinderVolume,
-      totalBoundingVolume,
-    };
-  }, [rollItems, coreDiameter, caliperMil, clearance]);
-
-  const tests = useMemo(() => runTests(), []);
-  const testsPassed = tests.every((t) => t.passed);
-
-  function updateForm(field, value) {
-    setForm((current) => ({ ...current, [field]: value }));
-    setFormError("");
-  }
-
-  function addRollItem() {
