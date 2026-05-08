@@ -1,3 +1,5 @@
+      boxName: best.boxName,
+      box: best.box,
       orientation: best.orientation,
       layers: best.layers,
       topViewPlaced: best.topViewPlaced,
@@ -89,11 +91,12 @@ function MultiBoxPackingDiagram({ packingPlan }) {
   const current = packingPlan.boxes[safeIndex];
   const orientation = current.orientation;
   const placed = current.topViewPlaced || [];
-  const viewW = 520;
-  const viewH = Math.max(220, Math.round((orientation.W / orientation.L) * viewW));
-  const scale = Math.min(viewW / orientation.L, viewH / orientation.W);
-  const svgW = orientation.L * scale;
-  const svgH = orientation.W * scale;
+  const viewBoxW = orientation.L;
+  const viewBoxH = orientation.W;
+  const frameStyle = { aspectRatio: `${orientation.L} / ${orientation.W}` };
+  const scale = 1;
+  const svgW = orientation.L;
+  const svgH = orientation.W;
   const rollsShown = placed.length;
   const additionalRolls = Math.max(0, current.placedCount - rollsShown);
   const layerViewW = 170;
@@ -102,7 +105,7 @@ function MultiBoxPackingDiagram({ packingPlan }) {
   const layerScaleY = layerViewH / orientation.H;
 
   return (
-    <Panel className="max-h-[760px] overflow-y-auto p-5">
+    <Panel className="p-5">
       <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div>
           <h2 className="text-lg font-semibold">2D packing view</h2>
@@ -139,8 +142,8 @@ function MultiBoxPackingDiagram({ packingPlan }) {
       <div className="grid gap-4 lg:grid-cols-[1fr_220px]">
         <div>
           <div className="mb-2 text-sm font-medium text-slate-700">Layer 1 overhead view</div>
-          <div className="max-h-[430px] overflow-auto rounded-2xl border bg-slate-50 p-4">
-            <svg width={svgW} height={svgH} viewBox={`0 0 ${svgW} ${svgH}`} className="bg-white">
+          <div className="w-full overflow-hidden rounded-2xl border bg-slate-50 p-4" style={frameStyle}>
+            <svg width="100%" height="100%" viewBox={`0 0 ${viewBoxW} ${viewBoxH}`} preserveAspectRatio="xMidYMid meet" className="bg-white">
               <rect x="0" y="0" width={svgW} height={svgH} fill="white" stroke="currentColor" strokeWidth="2" className="text-slate-800" />
               {placed.map((roll) => {
                 const cx = roll.x * scale;
@@ -174,7 +177,3 @@ function MultiBoxPackingDiagram({ packingPlan }) {
               {current.layers.map((layer, index) => {
                 const layerHeight = Math.max(layer.layerHeight * layerScaleY, 6);
                 const y = layerViewH - current.layers.slice(0, index + 1).reduce((sum, l) => sum + l.layerHeight * layerScaleY, 0);
-                return (
-                  <g key={index}>
-                    <rect
-                      x="8"

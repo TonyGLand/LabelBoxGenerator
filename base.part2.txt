@@ -1,3 +1,4 @@
+  const repeat = repeatEdge === "long" ? longEdge : shortEdge;
   const labelHeight = repeatEdge === "long" ? shortEdge : longEdge;
   const rollHeight = labelHeight + DEFAULT_CORE_HEIGHT_OVERHANG;
   const repeatPitch = repeat + DEFAULT_LABEL_GAP;
@@ -176,5 +177,3 @@ function buildMultiBoxPlan(rollGroups, availableBoxes = BOXES) {
     }
 
     boxes.push({
-      boxName: best.boxName,
-      box: best.box,

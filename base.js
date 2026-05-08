@@ -449,11 +449,12 @@ function MultiBoxPackingDiagram({ packingPlan }) {
   const current = packingPlan.boxes[safeIndex];
   const orientation = current.orientation;
   const placed = current.topViewPlaced || [];
-  const viewW = 520;
-  const viewH = Math.max(220, Math.round((orientation.W / orientation.L) * viewW));
-  const scale = Math.min(viewW / orientation.L, viewH / orientation.W);
-  const svgW = orientation.L * scale;
-  const svgH = orientation.W * scale;
+  const viewBoxW = orientation.L;
+  const viewBoxH = orientation.W;
+  const frameStyle = { aspectRatio: `${orientation.L} / ${orientation.W}` };
+  const scale = 1;
+  const svgW = orientation.L;
+  const svgH = orientation.W;
   const rollsShown = placed.length;
   const additionalRolls = Math.max(0, current.placedCount - rollsShown);
   const layerViewW = 170;
@@ -462,7 +463,7 @@ function MultiBoxPackingDiagram({ packingPlan }) {
   const layerScaleY = layerViewH / orientation.H;
 
   return (
-    <Panel className="max-h-[760px] overflow-y-auto p-5">
+    <Panel className="p-5">
       <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div>
           <h2 className="text-lg font-semibold">2D packing view</h2>
@@ -499,8 +500,8 @@ function MultiBoxPackingDiagram({ packingPlan }) {
       <div className="grid gap-4 lg:grid-cols-[1fr_220px]">
         <div>
           <div className="mb-2 text-sm font-medium text-slate-700">Layer 1 overhead view</div>
-          <div className="max-h-[430px] overflow-auto rounded-2xl border bg-slate-50 p-4">
-            <svg width={svgW} height={svgH} viewBox={`0 0 ${svgW} ${svgH}`} className="bg-white">
+          <div className="w-full overflow-hidden rounded-2xl border bg-slate-50 p-4" style={frameStyle}>
+            <svg width="100%" height="100%" viewBox={`0 0 ${viewBoxW} ${viewBoxH}`} preserveAspectRatio="xMidYMid meet" className="bg-white">
               <rect x="0" y="0" width={svgW} height={svgH} fill="white" stroke="currentColor" strokeWidth="2" className="text-slate-800" />
               {placed.map((roll) => {
                 const cx = roll.x * scale;
@@ -578,19 +579,16 @@ function RollCalculationsTable({ rolls, onRemove }) {
   }
 
   return (
-    <div className="max-h-[420px] overflow-auto rounded-2xl border bg-white">
-      <table className="min-w-[1160px] w-full text-sm">
+    <div className="max-h-[420px] overflow-y-auto overflow-x-hidden rounded-2xl border bg-white">
+      <table className="w-full table-fixed text-sm">
         <thead className="sticky top-0 bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-500">
           <tr>
+            <th className="p-3">Roll IDs</th>
             <th className="p-3">Width</th>
             <th className="p-3">Height</th>
             <th className="p-3">Rolls</th>
-            <th className="p-3">Roll IDs</th>
             <th className="p-3">Labels / roll</th>
             <th className="p-3">Edge</th>
-            <th className="p-3">Repeat</th>
-            <th className="p-3">Pitch</th>
-            <th className="p-3">Roll height</th>
             <th className="p-3">Diameter</th>
             <th className="p-3">Eff. size</th>
             <th className="p-3">Action</th>
@@ -598,18 +596,15 @@ function RollCalculationsTable({ rolls, onRemove }) {
         </thead>
         <tbody>
           {rolls.map((roll, groupIndex) => (
-            <tr key={roll.id} className="border-t">
+            <tr key={roll.id} className="border-t align-top">
+              <td className="break-words p-3 font-semibold text-slate-700">{getRollLabelRange(groupIndex, roll.rolls)}</td>
               <td className="p-3">{formatNumber(roll.width)}&quot;</td>
               <td className="p-3">{formatNumber(roll.height)}&quot;</td>
               <td className="p-3">{roll.rolls}</td>
-              <td className="p-3 font-semibold text-slate-700">{getRollLabelRange(groupIndex, roll.rolls)}</td>
-              <td className="p-3">{roll.labelsPerRoll.toLocaleString()}</td>
-              <td className="p-3">{roll.repeatEdgeLabel}</td>
-              <td className="p-3">{formatNumber(roll.repeat)}&quot;</td>
-              <td className="p-3">{formatNumber(roll.repeatPitch)}&quot;</td>
-              <td className="p-3">{formatNumber(roll.rollHeight)}&quot;</td>
+              <td className="break-words p-3">{roll.labelsPerRoll.toLocaleString()}</td>
+              <td className="break-words p-3">{roll.repeatEdgeLabel}</td>
               <td className="p-3 font-semibold">{formatNumber(roll.outerDiameter)}&quot;</td>
-              <td className="p-3">{formatNumber(roll.effectiveDiameter)} x {formatNumber(roll.effectiveHeight)}</td>
+              <td className="break-words p-3">{formatNumber(roll.effectiveDiameter)} x {formatNumber(roll.effectiveHeight)}</td>
               <td className="p-3">
                 <button
                   type="button"

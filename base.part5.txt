@@ -1,4 +1,3 @@
-    setForm(EMPTY_FORM);
     setFormError("");
   }
 
