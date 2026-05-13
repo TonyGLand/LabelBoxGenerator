@@ -1,3 +1,6 @@
+                >
+                  Clear entry fields
+                </button>
               </div>
             </Panel>
 
@@ -39,7 +42,7 @@
                       <p className="mt-1 text-sm text-slate-600">These values apply to every roll group in the current order.</p>
                     </div>
 
-                    <div className="grid gap-3 md:grid-cols-4">
+                    <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
                       <NumberField label="Core diameter, in" value={coreDiameter} onChange={setCoreDiameter} step="0.001" />
                       <NumberField label="Total caliper, mil" value={caliperMil} onChange={setCaliperMil} step="0.1" />
                       <NumberField label="Clearance, in" value={clearance} onChange={setClearance} step="0.05" />
@@ -80,7 +83,12 @@
           </div>
 
           <div className="min-w-0 xl:[height:min(68vh,720px)]">
-            <MultiBoxPackingDiagram packingPlan={result.packingPlan} />
+            <MultiBoxPackingDiagram
+              packingPlan={result.packingPlan}
+              packingMethod={packingMethod}
+              onPackingMethodChange={setPackingMethod}
+              activePackingMethod={result.activePackingMethod}
+            />
           </div>
         </div>
 

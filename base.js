@@ -3,14 +3,20 @@ const { useMemo, useState } = React;
 const DEFAULT_CORE_DIAMETER = 3.25;
 const DEFAULT_CALIPER_MIL = 6.2;
 const DEFAULT_CLEARANCE = 0.25;
-const DEFAULT_EXTRA_PERCENT = 3;
+const DEFAULT_EXTRA_PERCENT = 5;
 const DEFAULT_LABEL_GAP = 0;
 const DEFAULT_CORE_HEIGHT_OVERHANG = 0.5;
 const DEFAULT_REPEAT_EDGE = "short";
+const DEFAULT_PACKING_METHOD = "standard";
 
 const REPEAT_EDGE_LABELS = {
   short: "Short edge",
   long: "Long edge",
+};
+
+const PACKING_METHOD_LABELS = {
+  standard: "Standard grid",
+  offset: "Hex / offset rows",
 };
 
 const BOXES = [
@@ -133,26 +139,6 @@ function SelectField({ label, value, onChange, children }) {
   );
 }
 
-function uniqueOrientations(box) {
-  const dims = [box.l, box.w, box.h];
-  const perms = [
-    [dims[0], dims[1], dims[2]],
-    [dims[0], dims[2], dims[1]],
-    [dims[1], dims[0], dims[2]],
-    [dims[1], dims[2], dims[0]],
-    [dims[2], dims[0], dims[1]],
-    [dims[2], dims[1], dims[0]],
-  ];
-
-  const seen = new Set();
-  return perms.filter((p) => {
-    const key = p.join("x");
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
 function normalizeRollInput(item, repeatEdgeChoice = item.repeatEdge || DEFAULT_REPEAT_EDGE) {
   const width = Number(item.width);
   const height = Number(item.height);
@@ -233,6 +219,14 @@ function calculateRoll(item, coreDiameter, caliperMil, clearance, extraPercent =
   };
 }
 
+function getRollLabel(groupIndex) {
+  return `${groupIndex + 1}`;
+}
+
+function getRollLabelRange(groupIndex) {
+  return getRollLabel(groupIndex);
+}
+
 function expandRollInstances(rollGroups) {
   const instances = [];
   rollGroups.forEach((group, groupIndex) => {
@@ -262,7 +256,7 @@ function centerPlacedInOrientation(placed, orientation) {
   return placed.map((roll) => ({ ...roll, x: roll.x + offsetX, y: roll.y + offsetY }));
 }
 
-function packLayer(instances, orientation, remainingHeight) {
+function packLayerStandard(instances, orientation, remainingHeight) {
   const eligible = instances.filter((roll) => roll.height <= remainingHeight && roll.diameter <= orientation.L && roll.diameter <= orientation.W);
   if (eligible.length >= 3) {
     const firstThree = eligible.slice(0, 3);
@@ -331,13 +325,55 @@ function packLayer(instances, orientation, remainingHeight) {
   return { placed: centeredPlaced, remaining, layerHeight };
 }
 
-function packBox(instances, orientation) {
+function packLayerOffset(instances, orientation, remainingHeight) {
+  const eligible = instances.filter((roll) => roll.height <= remainingHeight && roll.diameter <= orientation.L && roll.diameter <= orientation.W);
+  if (!eligible.length) return { placed: [], remaining: instances, layerHeight: 0 };
+
+  const placed = [];
+  const placedIds = new Set();
+  const slotD = Math.max(...eligible.map((roll) => roll.diameter));
+  const rowStep = slotD * Math.sqrt(3) / 2;
+  let rowIndex = 0;
+  let centerY = slotD / 2;
+
+  while (centerY + slotD / 2 <= orientation.W + 1e-9) {
+    let centerX = slotD / 2 + (rowIndex % 2 ? slotD / 2 : 0);
+    while (centerX + slotD / 2 <= orientation.L + 1e-9) {
+      const roll = eligible.find((candidate) => !placedIds.has(candidate.id));
+      if (roll) {
+        placed.push({
+          ...roll,
+          x: centerX,
+          y: centerY,
+          r: roll.diameter / 2,
+        });
+        placedIds.add(roll.id);
+      }
+      centerX += slotD;
+    }
+    rowIndex += 1;
+    centerY = slotD / 2 + rowIndex * rowStep;
+  }
+
+  const centeredPlaced = centerPlacedInOrientation(placed, orientation);
+  const remaining = instances.filter((roll) => !placedIds.has(roll.id));
+  const layerHeight = centeredPlaced.length ? Math.max(...centeredPlaced.map((roll) => roll.height)) : 0;
+  return { placed: centeredPlaced, remaining, layerHeight };
+}
+
+function packLayer(instances, orientation, remainingHeight, packingMethod = DEFAULT_PACKING_METHOD) {
+  return packingMethod === "offset"
+    ? packLayerOffset(instances, orientation, remainingHeight)
+    : packLayerStandard(instances, orientation, remainingHeight);
+}
+
+function packBox(instances, orientation, packingMethod = DEFAULT_PACKING_METHOD) {
   let remaining = [...instances];
   let remainingHeight = orientation.H;
   const layers = [];
 
   while (remaining.length > 0 && remainingHeight > 0) {
-    const layer = packLayer(remaining, orientation, remainingHeight);
+    const layer = packLayer(remaining, orientation, remainingHeight, packingMethod);
     if (!layer.placed.length || layer.layerHeight <= 0 || layer.layerHeight > remainingHeight) break;
     layers.push(layer);
     remaining = layer.remaining;
@@ -351,16 +387,17 @@ function packBox(instances, orientation) {
     placedCount,
     remaining,
     topViewPlaced: layers[0]?.placed || [],
+    packingMethod,
   };
 }
 
-function chooseBestBoxForRemaining(instances, availableBoxes = BOXES) {
+function chooseBestBoxForRemaining(instances, availableBoxes = BOXES, packingMethod = DEFAULT_PACKING_METHOD) {
   if (!instances.length) return null;
   let best = null;
 
   for (const box of availableBoxes) {
     const orientation = { L: box.l, W: box.w, H: box.h, box };
-    const packed = packBox(instances, orientation);
+    const packed = packBox(instances, orientation, packingMethod);
     if (packed.placedCount === 0) continue;
 
     const candidate = {
@@ -372,6 +409,7 @@ function chooseBestBoxForRemaining(instances, availableBoxes = BOXES) {
       placedCount: packed.placedCount,
       fillsAllRemaining: packed.placedCount === instances.length,
       remaining: packed.remaining,
+      packingMethod: packed.packingMethod,
     };
 
     if (!best) {
@@ -390,14 +428,14 @@ function chooseBestBoxForRemaining(instances, availableBoxes = BOXES) {
   return best;
 }
 
-function buildMultiBoxPlan(rollGroups, availableBoxes = BOXES) {
+function buildMultiBoxPlan(rollGroups, availableBoxes = BOXES, packingMethod = DEFAULT_PACKING_METHOD) {
   let remaining = expandRollInstances(rollGroups);
   const boxes = [];
   let guard = 0;
 
   while (remaining.length > 0 && guard < 200) {
     guard += 1;
-    const best = chooseBestBoxForRemaining(remaining, availableBoxes);
+    const best = chooseBestBoxForRemaining(remaining, availableBoxes, packingMethod);
 
     if (!best || best.placedCount === 0) {
       return { boxes, unpacked: remaining };
@@ -410,6 +448,7 @@ function buildMultiBoxPlan(rollGroups, availableBoxes = BOXES) {
       layers: best.layers,
       topViewPlaced: best.topViewPlaced,
       placedCount: best.placedCount,
+      packingMethod: best.packingMethod,
     });
 
     remaining = best.remaining;
@@ -425,14 +464,6 @@ function summarizeBoxMix(boxes) {
   });
 
   return Array.from(counts.entries()).map(([boxName, count]) => ({ boxName, count }));
-}
-
-function getRollLabel(groupIndex) {
-  return `${groupIndex + 1}`;
-}
-
-function getRollLabelRange(groupIndex) {
-  return getRollLabel(groupIndex);
 }
 
 function summarizeLayerRollLabels(rolls) {
@@ -463,7 +494,7 @@ function runTests() {
         return { name: test.name, passed: false, details: parsed?.error || "Could not parse test row." };
       }
       const calculated = calculateRoll(parsed, DEFAULT_CORE_DIAMETER, DEFAULT_CALIPER_MIL, DEFAULT_CLEARANCE, DEFAULT_EXTRA_PERCENT);
-      const plan = buildMultiBoxPlan([calculated]);
+      const plan = buildMultiBoxPlan([calculated], BOXES, DEFAULT_PACKING_METHOD);
       return {
         name: test.name,
         passed: plan.boxes.length > 0 && plan.unpacked.length === 0,
@@ -514,8 +545,10 @@ function MultiBoxPackingDiagram({ packingPlan }) {
   const svgH = orientation.W * scale;
   const layerViewW = 170;
   const layerViewH = 220;
-  const layerScaleX = layerViewW / orientation.L;
   const layerScaleY = layerViewH / orientation.H;
+  const packingLabel = PACKING_METHOD_LABELS[current.packingMethod || DEFAULT_PACKING_METHOD] || PACKING_METHOD_LABELS[DEFAULT_PACKING_METHOD];
+  const usesPadSeparator =
+    current?.box?.l === 24 && current?.box?.w === 16 && (current?.box?.h === 8 || current?.box?.h === 12);
 
   return (
     <Panel className="flex h-full min-h-0 flex-col p-3">
@@ -545,11 +578,12 @@ function MultiBoxPackingDiagram({ packingPlan }) {
         </div>
       </div>
 
-      <div className="mb-2 grid gap-2 text-xs text-slate-600 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-2 grid gap-2 text-xs text-slate-600 sm:grid-cols-2 xl:grid-cols-5">
         <div className="rounded-xl bg-slate-100 px-3 py-2">Box: <span className="font-semibold">{current.boxName}</span></div>
         <div className="rounded-xl bg-slate-100 px-3 py-2">Top view: {orientation.L} x {orientation.W}</div>
         <div className="rounded-xl bg-slate-100 px-3 py-2">Height: {orientation.H}</div>
         <div className="rounded-xl bg-slate-100 px-3 py-2">Rolls in box: {current.placedCount}</div>
+        <div className="rounded-xl bg-slate-100 px-3 py-2">Packing: {packingLabel}</div>
       </div>
 
       <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_230px]">
@@ -627,6 +661,9 @@ function MultiBoxPackingDiagram({ packingPlan }) {
                       <text x={layerViewW / 2} y={Math.max(12, y + layerHeight / 2 + 4)} textAnchor="middle" className="fill-slate-700 text-[10px] font-semibold">
                         Layer {index + 1}: {layer.placed.length} roll{layer.placed.length === 1 ? "" : "s"}
                       </text>
+                      {usesPadSeparator && index < current.layers.length - 1 && (
+                        <line x1="8" y1={Math.max(0, y)} x2={layerViewW - 8} y2={Math.max(0, y)} stroke="black" strokeWidth="2" />
+                      )}
                     </g>
                   );
                 })}
@@ -716,6 +753,9 @@ function BoxSummary({ packingPlan }) {
             <div className="mt-1 text-xs text-slate-500">
               Box size: {boxSetup.orientation.L} x {boxSetup.orientation.W} x {boxSetup.orientation.H}
             </div>
+            <div className="mt-1 text-xs text-slate-500">
+              Packing: {PACKING_METHOD_LABELS[boxSetup.packingMethod || DEFAULT_PACKING_METHOD]}
+            </div>
             <div className="mt-1 text-xs text-slate-500">Layers used: {boxSetup.layers.length}</div>
             <div className="mt-2 space-y-1">
               {boxSetup.layers.map((layer, layerIndex) => (
@@ -739,6 +779,7 @@ function LabelRollBoxCalculator() {
   const [caliperMil, setCaliperMil] = useState(DEFAULT_CALIPER_MIL);
   const [clearance, setClearance] = useState(DEFAULT_CLEARANCE);
   const [extraPercent, setExtraPercent] = useState(DEFAULT_EXTRA_PERCENT);
+  const [packingMethod, setPackingMethod] = useState(DEFAULT_PACKING_METHOD);
   const [repeatEdge, setRepeatEdge] = useState(DEFAULT_REPEAT_EDGE);
   const [selectedBoxIds, setSelectedBoxIds] = useState(DEFAULT_SELECTED_BOX_IDS);
   const [activeTab, setActiveTab] = useState("rolls");
@@ -751,7 +792,7 @@ function LabelRollBoxCalculator() {
     const valid = parsed
       .filter((p) => !p.error)
       .map((p) => calculateRoll(p, Number(coreDiameter), Number(caliperMil), Number(clearance), Number(extraPercent)));
-    const packingPlan = valid.length ? buildMultiBoxPlan(valid, availableBoxes) : { boxes: [], unpacked: [] };
+    const packingPlan = valid.length ? buildMultiBoxPlan(valid, availableBoxes, packingMethod) : { boxes: [], unpacked: [] };
     const boxMix = summarizeBoxMix(packingPlan.boxes);
     const totalRolls = valid.reduce((sum, r) => sum + r.rolls, 0);
     const totalCylinderVolume = valid.reduce((sum, r) => sum + r.totalCylinderVolume, 0);
@@ -768,8 +809,7 @@ function LabelRollBoxCalculator() {
       totalCylinderVolume,
       totalBoundingVolume,
     };
-  }, [rollItems, coreDiameter, caliperMil, clearance, extraPercent, repeatEdge, selectedBoxIds]);
-
+  }, [rollItems, coreDiameter, caliperMil, clearance, extraPercent, packingMethod, repeatEdge, selectedBoxIds]);
 
   function updateForm(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -817,7 +857,6 @@ function LabelRollBoxCalculator() {
     setSelectedBoxIds([]);
   }
 
-
   return (
     <div className="min-h-screen bg-slate-50 p-2 text-slate-900 md:p-3">
       <div className="mx-auto max-w-none space-y-3">
@@ -828,7 +867,7 @@ function LabelRollBoxCalculator() {
               <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Find the practical box plan for label rolls</h1>
             </div>
             <p className="max-w-3xl text-xs text-slate-600 md:text-right">
-              Add roll groups, calculate diameters, then build a multi-box packing plan.
+              Add roll items, calculate diameters, then build a multi-box packing plan.
             </p>
           </div>
         </header>
@@ -837,7 +876,7 @@ function LabelRollBoxCalculator() {
           <div className="grid gap-3 xl:grid-rows-[350px_minmax(0,1fr)] xl:[height:min(68vh,720px)]">
             <Panel className="p-3">
               <div className="mb-2 flex items-center justify-between gap-3">
-                <h2 className="text-lg font-semibold">Add roll group</h2>
+                <h2 className="text-lg font-semibold">Add roll item</h2>
                 <button
                   type="button"
                   onClick={clearRollItems}
@@ -866,7 +905,7 @@ function LabelRollBoxCalculator() {
                   onClick={addRollItem}
                   className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
                 >
-                  Add roll group
+                  Add roll item
                 </button>
                 <button
                   type="button"
@@ -919,11 +958,15 @@ function LabelRollBoxCalculator() {
                       <p className="mt-1 text-sm text-slate-600">These values apply to every roll group in the current order.</p>
                     </div>
 
-                    <div className="grid gap-3 md:grid-cols-4">
+                    <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
                       <NumberField label="Core diameter, in" value={coreDiameter} onChange={setCoreDiameter} step="0.001" />
                       <NumberField label="Total caliper, mil" value={caliperMil} onChange={setCaliperMil} step="0.1" />
                       <NumberField label="Clearance, in" value={clearance} onChange={setClearance} step="0.05" />
                       <NumberField label="Extra amount, %" value={extraPercent} onChange={setExtraPercent} step="0.1" />
+                      <SelectField label="Packing method" value={packingMethod} onChange={setPackingMethod}>
+                        <option value="standard">Standard grid</option>
+                        <option value="offset">Hex / offset rows</option>
+                      </SelectField>
                     </div>
 
                     <div className="space-y-3">
